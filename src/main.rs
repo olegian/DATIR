@@ -15,6 +15,7 @@ extern crate rustc_driver;
 extern crate rustc_errors;
 extern crate rustc_interface;
 extern crate rustc_middle;
+extern crate rustc_hir;
 extern crate rustc_parse;
 extern crate rustc_session;
 extern crate rustc_span;
@@ -29,7 +30,7 @@ use std::env;
 
 mod instrumentation;
 use crate::instrumentation::{
-    TupleLiteralsVisitor, UpdateFnDeclsVisitor, create_stubs, define_types_from_file,
+    TupleLiteralsVisitor, UpdateFnDeclsVisitor, create_stubs, define_types_from_file, after_analysis_helper
 };
 
 // included just for code analysis to run on ati.rs
@@ -48,29 +49,29 @@ impl rustc_driver::Callbacks for Callbacks {
         compiler: &interface::Compiler,
         krate: &mut ast::Crate,
     ) -> Compilation {
-        // discovers all functions that will be instrumented, and updates
-        // the function signatures to tag all passed values as necessary.
-        // also updates type definitions in structs. 
-        let mut modify_params_visitor = UpdateFnDeclsVisitor::new();
-        modify_params_visitor.visit_crate(krate);
-        let modified_funcs = modify_params_visitor.get_modified_funcs();
+        // // discovers all functions that will be instrumented, and updates
+        // // the function signatures to tag all passed values as necessary.
+        // // also updates type definitions in structs. 
+        // let mut modify_params_visitor = UpdateFnDeclsVisitor::new();
+        // modify_params_visitor.visit_crate(krate);
+        // let modified_funcs = modify_params_visitor.get_modified_funcs();
 
-        // tuple all literals to create tags, untupling as necessary
-        // when they are passed into untracked functions
-        let mut visitor = TupleLiteralsVisitor::new(modified_funcs);
-        visitor.visit_crate(krate);
+        // // tuple all literals to create tags, untupling as necessary
+        // // when they are passed into untracked functions
+        // let mut visitor = TupleLiteralsVisitor::new(modified_funcs);
+        // visitor.visit_crate(krate);
 
-        // create all required function stubs, which perform site management
-        create_stubs(krate, &compiler.sess.psess, modified_funcs);
+        // // create all required function stubs, which perform site management
+        // create_stubs(krate, &compiler.sess.psess, modified_funcs);
 
-        // define all used ATI types from ati.rs
-        // do this last so that instrumentation is not applied to these types
-        let cwd = std::env::current_dir().unwrap();
-        define_types_from_file(
-            &cwd.join("src/ati/ati.rs"),
-            &compiler.sess.psess,
-            krate,
-        );
+        // // define all used ATI types from ati.rs
+        // // do this last so that instrumentation is not applied to these types
+        // let cwd = std::env::current_dir().unwrap();
+        // define_types_from_file(
+        //     &cwd.join("src/ati/ati.rs"),
+        //     &compiler.sess.psess,
+        //     krate,
+        // );
 
         Compilation::Continue
     }
@@ -86,9 +87,11 @@ impl rustc_driver::Callbacks for Callbacks {
 
     fn after_analysis<'tcx>(
         &mut self,
-        _compiler: &interface::Compiler,
-        _tcx: TyCtxt<'tcx>,
+        compiler: &interface::Compiler,
+        tcx: TyCtxt<'tcx>,
     ) -> Compilation {
+        after_analysis_helper(compiler, tcx);
+
         Compilation::Continue
     }
 }

@@ -1,0 +1,897 @@
+Crate {
+    owners: [
+        Owner(
+            OwnerInfo {
+                nodes: OwnerNodes {
+                    node: ParentedNode {
+                        parent: 4294967040,
+                        node: Crate(
+                            Mod {
+                                spans: ModSpans {
+                                    inner_span: tests/simple/input.rs:1:1: 10:2 (#0),
+                                    inject_use_span: no-location (#0),
+                                },
+                                item_ids: [
+                                    ItemId {
+                                        owner_id: DefId(0:1 ~ input[326d]::std),
+                                    },
+                                    ItemId {
+                                        owner_id: DefId(0:2 ~ input[326d]::{use#0}),
+                                    },
+                                    ItemId {
+                                        owner_id: DefId(0:3 ~ input[326d]::main),
+                                    },
+                                    ItemId {
+                                        owner_id: DefId(0:4 ~ input[326d]::foo),
+                                    },
+                                ],
+                            },
+                        ),
+                    },
+                    parents: [
+                        (0, 4294967040),
+                    ],
+                    bodies: {},
+                    opt_hash_including_bodies: None,
+                },
+                parenting: UnordMap {
+                    inner: {},
+                },
+                attrs: AttributeMap {
+                    map: {},
+                    define_opaque: None,
+                    opt_hash: None,
+                },
+                trait_map: UnordMap {
+                    inner: {},
+                },
+                delayed_lints: DelayedLints {
+                    lints: [],
+                    opt_hash: None,
+                },
+            },
+        ),
+        Owner(
+            OwnerInfo {
+                nodes: OwnerNodes {
+                    node: ParentedNode {
+                        parent: 4294967040,
+                        node: Item(
+                            Item {
+                                owner_id: DefId(0:1 ~ input[326d]::std),
+                                kind: ExternCrate(
+                                    None,
+                                    std#2,
+                                ),
+                                span: no-location (#1),
+                                vis_span: no-location (#1),
+                                has_delayed_lints: false,
+                                eii: false,
+                            },
+                        ),
+                    },
+                    parents: [
+                        (0, 4294967040),
+                    ],
+                    bodies: {},
+                    opt_hash_including_bodies: None,
+                },
+                parenting: UnordMap {
+                    inner: {},
+                },
+                attrs: AttributeMap {
+                    map: {},
+                    define_opaque: None,
+                    opt_hash: None,
+                },
+                trait_map: UnordMap {
+                    inner: {},
+                },
+                delayed_lints: DelayedLints {
+                    lints: [],
+                    opt_hash: None,
+                },
+            },
+        ),
+        Owner(
+            OwnerInfo {
+                nodes: OwnerNodes {
+                    node: ParentedNode {
+                        parent: 4294967040,
+                        node: Item(
+                            Item {
+                                owner_id: DefId(0:2 ~ input[326d]::{use#0}),
+                                kind: Use(
+                                    Path {
+                                        span: no-location (#1),
+                                        res: PerNS {
+                                            value_ns: Some(
+                                                Err,
+                                            ),
+                                            type_ns: Some(
+                                                Err,
+                                            ),
+                                            macro_ns: Some(
+                                                Err,
+                                            ),
+                                        },
+                                        segments: [
+                                            PathSegment {
+                                                ident: {{root}}#1,
+                                                hir_id: HirId(DefId(0:2 ~ input[326d]::{use#0}).1),
+                                                res: Err,
+                                                args: None,
+                                                infer_args: false,
+                                            },
+                                            PathSegment {
+                                                ident: std#1,
+                                                hir_id: HirId(DefId(0:2 ~ input[326d]::{use#0}).2),
+                                                res: Err,
+                                                args: None,
+                                                infer_args: false,
+                                            },
+                                            PathSegment {
+                                                ident: prelude#1,
+                                                hir_id: HirId(DefId(0:2 ~ input[326d]::{use#0}).3),
+                                                res: Err,
+                                                args: None,
+                                                infer_args: false,
+                                            },
+                                            PathSegment {
+                                                ident: rust_2015#1,
+                                                hir_id: HirId(DefId(0:2 ~ input[326d]::{use#0}).4),
+                                                res: Err,
+                                                args: None,
+                                                infer_args: false,
+                                            },
+                                        ],
+                                    },
+                                    Glob,
+                                ),
+                                span: no-location (#1),
+                                vis_span: no-location (#1),
+                                has_delayed_lints: false,
+                                eii: false,
+                            },
+                        ),
+                    },
+                    parents: [
+                        (0, 4294967040),
+                        (1, 0),
+                        (2, 0),
+                        (3, 0),
+                        (4, 0),
+                    ],
+                    bodies: {},
+                    opt_hash_including_bodies: None,
+                },
+                parenting: UnordMap {
+                    inner: {},
+                },
+                attrs: AttributeMap {
+                    map: {
+                        0: [
+                            Unparsed(
+                                AttrItem {
+                                    path: AttrPath {
+                                        segments: [
+                                            "prelude_import",
+                                        ],
+                                        span: no-location (#1),
+                                    },
+                                    args: Empty,
+                                    id: HashIgnoredAttrId {
+                                        attr_id: AttrId(0),
+                                    },
+                                    style: Outer,
+                                    span: no-location (#1),
+                                },
+                            ),
+                        ],
+                    },
+                    define_opaque: None,
+                    opt_hash: None,
+                },
+                trait_map: UnordMap {
+                    inner: {},
+                },
+                delayed_lints: DelayedLints {
+                    lints: [],
+                    opt_hash: None,
+                },
+            },
+        ),
+        Owner(
+            OwnerInfo {
+                nodes: OwnerNodes {
+                    node: ParentedNode {
+                        parent: 4294967040,
+                        node: Item(
+                            Item {
+                                owner_id: DefId(0:3 ~ input[326d]::main),
+                                kind: Fn {
+                                    sig: FnSig {
+                                        header: FnHeader {
+                                            safety: Normal(
+                                                Safe,
+                                            ),
+                                            constness: NotConst,
+                                            asyncness: NotAsync,
+                                            abi: Rust,
+                                        },
+                                        decl: FnDecl {
+                                            inputs: [],
+                                            output: DefaultReturn(
+                                                tests/simple/input.rs:1:10: 1:10 (#0),
+                                            ),
+                                            c_variadic: false,
+                                            implicit_self: None,
+                                            lifetime_elision_allowed: false,
+                                        },
+                                        span: tests/simple/input.rs:1:1: 1:10 (#0),
+                                    },
+                                    ident: main#0,
+                                    generics: Generics {
+                                        params: [],
+                                        predicates: [],
+                                        has_where_clause_predicates: false,
+                                        where_clause_span: tests/simple/input.rs:1:10: 1:10 (#0),
+                                        span: tests/simple/input.rs:1:8: 1:8 (#0),
+                                    },
+                                    body: BodyId {
+                                        hir_id: HirId(DefId(0:3 ~ input[326d]::main).9),
+                                    },
+                                    has_body: true,
+                                },
+                                span: tests/simple/input.rs:1:1: 3:2 (#0),
+                                vis_span: no-location (#0),
+                                has_delayed_lints: false,
+                                eii: false,
+                            },
+                        ),
+                    },
+                    parents: [
+                        (0, 4294967040),
+                        (1, 9),
+                        (2, 8),
+                        (3, 2),
+                        (4, 3),
+                        (5, 2),
+                        (6, 2),
+                        (7, 2),
+                        (8, 1),
+                        (9, 0),
+                    ],
+                    bodies: {
+                        9: Body {
+                            params: [],
+                            value: Expr {
+                                hir_id: HirId(DefId(0:3 ~ input[326d]::main).9),
+                                kind: Block(
+                                    Block {
+                                        stmts: [
+                                            Stmt {
+                                                hir_id: HirId(DefId(0:3 ~ input[326d]::main).8),
+                                                kind: Semi(
+                                                    Expr {
+                                                        hir_id: HirId(DefId(0:3 ~ input[326d]::main).2),
+                                                        kind: Call(
+                                                            Expr {
+                                                                hir_id: HirId(DefId(0:3 ~ input[326d]::main).3),
+                                                                kind: Path(
+                                                                    Resolved(
+                                                                        None,
+                                                                        Path {
+                                                                            span: tests/simple/input.rs:2:5: 2:8 (#0),
+                                                                            res: Def(
+                                                                                Fn,
+                                                                                DefId(0:4 ~ input[326d]::foo),
+                                                                            ),
+                                                                            segments: [
+                                                                                PathSegment {
+                                                                                    ident: foo#0,
+                                                                                    hir_id: HirId(DefId(0:3 ~ input[326d]::main).4),
+                                                                                    res: Def(
+                                                                                        Fn,
+                                                                                        DefId(0:4 ~ input[326d]::foo),
+                                                                                    ),
+                                                                                    args: None,
+                                                                                    infer_args: true,
+                                                                                },
+                                                                            ],
+                                                                        },
+                                                                    ),
+                                                                ),
+                                                                span: tests/simple/input.rs:2:5: 2:8 (#0),
+                                                            },
+                                                            [
+                                                                Expr {
+                                                                    hir_id: HirId(DefId(0:3 ~ input[326d]::main).5),
+                                                                    kind: Lit(
+                                                                        Spanned {
+                                                                            node: Int(
+                                                                                Pu128(
+                                                                                    1,
+                                                                                ),
+                                                                                Unsuffixed,
+                                                                            ),
+                                                                            span: tests/simple/input.rs:2:9: 2:10 (#0),
+                                                                        },
+                                                                    ),
+                                                                    span: tests/simple/input.rs:2:9: 2:10 (#0),
+                                                                },
+                                                                Expr {
+                                                                    hir_id: HirId(DefId(0:3 ~ input[326d]::main).6),
+                                                                    kind: Lit(
+                                                                        Spanned {
+                                                                            node: Int(
+                                                                                Pu128(
+                                                                                    2,
+                                                                                ),
+                                                                                Unsuffixed,
+                                                                            ),
+                                                                            span: tests/simple/input.rs:2:12: 2:13 (#0),
+                                                                        },
+                                                                    ),
+                                                                    span: tests/simple/input.rs:2:12: 2:13 (#0),
+                                                                },
+                                                                Expr {
+                                                                    hir_id: HirId(DefId(0:3 ~ input[326d]::main).7),
+                                                                    kind: Lit(
+                                                                        Spanned {
+                                                                            node: Int(
+                                                                                Pu128(
+                                                                                    3,
+                                                                                ),
+                                                                                Unsuffixed,
+                                                                            ),
+                                                                            span: tests/simple/input.rs:2:15: 2:16 (#0),
+                                                                        },
+                                                                    ),
+                                                                    span: tests/simple/input.rs:2:15: 2:16 (#0),
+                                                                },
+                                                            ],
+                                                        ),
+                                                        span: tests/simple/input.rs:2:5: 2:17 (#0),
+                                                    },
+                                                ),
+                                                span: tests/simple/input.rs:2:5: 2:18 (#0),
+                                            },
+                                        ],
+                                        expr: None,
+                                        hir_id: HirId(DefId(0:3 ~ input[326d]::main).1),
+                                        rules: DefaultBlock,
+                                        span: tests/simple/input.rs:1:11: 3:2 (#0),
+                                        targeted_by_break: false,
+                                    },
+                                    None,
+                                ),
+                                span: tests/simple/input.rs:1:11: 3:2 (#0),
+                            },
+                        },
+                    },
+                    opt_hash_including_bodies: None,
+                },
+                parenting: UnordMap {
+                    inner: {},
+                },
+                attrs: AttributeMap {
+                    map: {},
+                    define_opaque: None,
+                    opt_hash: None,
+                },
+                trait_map: UnordMap {
+                    inner: {},
+                },
+                delayed_lints: DelayedLints {
+                    lints: [],
+                    opt_hash: None,
+                },
+            },
+        ),
+        Owner(
+            OwnerInfo {
+                nodes: OwnerNodes {
+                    node: ParentedNode {
+                        parent: 4294967040,
+                        node: Item(
+                            Item {
+                                owner_id: DefId(0:4 ~ input[326d]::foo),
+                                kind: Fn {
+                                    sig: FnSig {
+                                        header: FnHeader {
+                                            safety: Normal(
+                                                Safe,
+                                            ),
+                                            constness: NotConst,
+                                            asyncness: NotAsync,
+                                            abi: Rust,
+                                        },
+                                        decl: FnDecl {
+                                            inputs: [
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).26),
+                                                    span: tests/simple/input.rs:5:11: 5:14 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: tests/simple/input.rs:5:11: 5:14 (#0),
+                                                                res: PrimTy(
+                                                                    Uint(
+                                                                        u32,
+                                                                    ),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: u32#0,
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).27),
+                                                                        res: PrimTy(
+                                                                            Uint(
+                                                                                u32,
+                                                                            ),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).28),
+                                                    span: tests/simple/input.rs:5:19: 5:22 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: tests/simple/input.rs:5:19: 5:22 (#0),
+                                                                res: PrimTy(
+                                                                    Uint(
+                                                                        u32,
+                                                                    ),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: u32#0,
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).29),
+                                                                        res: PrimTy(
+                                                                            Uint(
+                                                                                u32,
+                                                                            ),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).30),
+                                                    span: tests/simple/input.rs:5:27: 5:30 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: tests/simple/input.rs:5:27: 5:30 (#0),
+                                                                res: PrimTy(
+                                                                    Uint(
+                                                                        u32,
+                                                                    ),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: u32#0,
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).31),
+                                                                        res: PrimTy(
+                                                                            Uint(
+                                                                                u32,
+                                                                            ),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            ],
+                                            output: Return(
+                                                Ty {
+                                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).32),
+                                                    span: tests/simple/input.rs:5:35: 5:38 (#0),
+                                                    kind: Path(
+                                                        Resolved(
+                                                            None,
+                                                            Path {
+                                                                span: tests/simple/input.rs:5:35: 5:38 (#0),
+                                                                res: PrimTy(
+                                                                    Uint(
+                                                                        u32,
+                                                                    ),
+                                                                ),
+                                                                segments: [
+                                                                    PathSegment {
+                                                                        ident: u32#0,
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).33),
+                                                                        res: PrimTy(
+                                                                            Uint(
+                                                                                u32,
+                                                                            ),
+                                                                        ),
+                                                                        args: None,
+                                                                        infer_args: false,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                            c_variadic: false,
+                                            implicit_self: None,
+                                            lifetime_elision_allowed: false,
+                                        },
+                                        span: tests/simple/input.rs:5:1: 5:38 (#0),
+                                    },
+                                    ident: foo#0,
+                                    generics: Generics {
+                                        params: [],
+                                        predicates: [],
+                                        has_where_clause_predicates: false,
+                                        where_clause_span: tests/simple/input.rs:5:38: 5:38 (#0),
+                                        span: tests/simple/input.rs:5:7: 5:7 (#0),
+                                    },
+                                    body: BodyId {
+                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).25),
+                                    },
+                                    has_body: true,
+                                },
+                                span: tests/simple/input.rs:5:1: 10:2 (#0),
+                                vis_span: tests/simple/input.rs:5:1: 5:1 (#0),
+                                has_delayed_lints: false,
+                                eii: false,
+                            },
+                        ),
+                    },
+                    parents: [
+                        (0, 4294967040),
+                        (1, 0),
+                        (2, 1),
+                        (3, 0),
+                        (4, 3),
+                        (5, 0),
+                        (6, 5),
+                        (7, 25),
+                        (8, 7),
+                        (9, 13),
+                        (10, 9),
+                        (11, 10),
+                        (12, 9),
+                        (13, 8),
+                        (14, 13),
+                        (15, 7),
+                        (16, 21),
+                        (17, 16),
+                        (18, 17),
+                        (19, 16),
+                        (20, 19),
+                        (21, 15),
+                        (22, 21),
+                        (23, 7),
+                        (24, 23),
+                        (25, 0),
+                        (26, 0),
+                        (27, 26),
+                        (28, 0),
+                        (29, 28),
+                        (30, 0),
+                        (31, 30),
+                        (32, 0),
+                        (33, 32),
+                    ],
+                    bodies: {
+                        25: Body {
+                            params: [
+                                Param {
+                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).1),
+                                    pat: Pat {
+                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).2),
+                                        kind: Binding(
+                                            BindingMode(
+                                                No,
+                                                Not,
+                                            ),
+                                            HirId(DefId(0:4 ~ input[326d]::foo).2),
+                                            x#0,
+                                            None,
+                                        ),
+                                        span: tests/simple/input.rs:5:8: 5:9 (#0),
+                                        default_binding_modes: true,
+                                    },
+                                    ty_span: tests/simple/input.rs:5:11: 5:14 (#0),
+                                    span: tests/simple/input.rs:5:8: 5:14 (#0),
+                                },
+                                Param {
+                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).3),
+                                    pat: Pat {
+                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).4),
+                                        kind: Binding(
+                                            BindingMode(
+                                                No,
+                                                Not,
+                                            ),
+                                            HirId(DefId(0:4 ~ input[326d]::foo).4),
+                                            y#0,
+                                            None,
+                                        ),
+                                        span: tests/simple/input.rs:5:16: 5:17 (#0),
+                                        default_binding_modes: true,
+                                    },
+                                    ty_span: tests/simple/input.rs:5:19: 5:22 (#0),
+                                    span: tests/simple/input.rs:5:16: 5:22 (#0),
+                                },
+                                Param {
+                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).5),
+                                    pat: Pat {
+                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).6),
+                                        kind: Binding(
+                                            BindingMode(
+                                                No,
+                                                Not,
+                                            ),
+                                            HirId(DefId(0:4 ~ input[326d]::foo).6),
+                                            z#0,
+                                            None,
+                                        ),
+                                        span: tests/simple/input.rs:5:24: 5:25 (#0),
+                                        default_binding_modes: true,
+                                    },
+                                    ty_span: tests/simple/input.rs:5:27: 5:30 (#0),
+                                    span: tests/simple/input.rs:5:24: 5:30 (#0),
+                                },
+                            ],
+                            value: Expr {
+                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).25),
+                                kind: Block(
+                                    Block {
+                                        stmts: [
+                                            Stmt {
+                                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).8),
+                                                kind: Let(
+                                                    LetStmt {
+                                                        super_: None,
+                                                        pat: Pat {
+                                                            hir_id: HirId(DefId(0:4 ~ input[326d]::foo).14),
+                                                            kind: Binding(
+                                                                BindingMode(
+                                                                    No,
+                                                                    Not,
+                                                                ),
+                                                                HirId(DefId(0:4 ~ input[326d]::foo).14),
+                                                                a#0,
+                                                                None,
+                                                            ),
+                                                            span: tests/simple/input.rs:6:9: 6:10 (#0),
+                                                            default_binding_modes: true,
+                                                        },
+                                                        ty: None,
+                                                        init: Some(
+                                                            Expr {
+                                                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).9),
+                                                                kind: Binary(
+                                                                    Spanned {
+                                                                        node: Add,
+                                                                        span: tests/simple/input.rs:6:15: 6:16 (#0),
+                                                                    },
+                                                                    Expr {
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).10),
+                                                                        kind: Path(
+                                                                            Resolved(
+                                                                                None,
+                                                                                Path {
+                                                                                    span: tests/simple/input.rs:6:13: 6:14 (#0),
+                                                                                    res: Local(
+                                                                                        HirId(DefId(0:4 ~ input[326d]::foo).2),
+                                                                                    ),
+                                                                                    segments: [
+                                                                                        PathSegment {
+                                                                                            ident: x#0,
+                                                                                            hir_id: HirId(DefId(0:4 ~ input[326d]::foo).11),
+                                                                                            res: Local(
+                                                                                                HirId(DefId(0:4 ~ input[326d]::foo).2),
+                                                                                            ),
+                                                                                            args: None,
+                                                                                            infer_args: true,
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ),
+                                                                        ),
+                                                                        span: tests/simple/input.rs:6:13: 6:14 (#0),
+                                                                    },
+                                                                    Expr {
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).12),
+                                                                        kind: Lit(
+                                                                            Spanned {
+                                                                                node: Int(
+                                                                                    Pu128(
+                                                                                        100,
+                                                                                    ),
+                                                                                    Unsuffixed,
+                                                                                ),
+                                                                                span: tests/simple/input.rs:6:17: 6:20 (#0),
+                                                                            },
+                                                                        ),
+                                                                        span: tests/simple/input.rs:6:17: 6:20 (#0),
+                                                                    },
+                                                                ),
+                                                                span: tests/simple/input.rs:6:13: 6:20 (#0),
+                                                            },
+                                                        ),
+                                                        els: None,
+                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).13),
+                                                        span: tests/simple/input.rs:6:5: 6:21 (#0),
+                                                        source: Normal,
+                                                    },
+                                                ),
+                                                span: tests/simple/input.rs:6:5: 6:21 (#0),
+                                            },
+                                            Stmt {
+                                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).15),
+                                                kind: Let(
+                                                    LetStmt {
+                                                        super_: None,
+                                                        pat: Pat {
+                                                            hir_id: HirId(DefId(0:4 ~ input[326d]::foo).22),
+                                                            kind: Binding(
+                                                                BindingMode(
+                                                                    No,
+                                                                    Not,
+                                                                ),
+                                                                HirId(DefId(0:4 ~ input[326d]::foo).22),
+                                                                b#0,
+                                                                None,
+                                                            ),
+                                                            span: tests/simple/input.rs:7:9: 7:10 (#0),
+                                                            default_binding_modes: true,
+                                                        },
+                                                        ty: None,
+                                                        init: Some(
+                                                            Expr {
+                                                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).16),
+                                                                kind: Binary(
+                                                                    Spanned {
+                                                                        node: Add,
+                                                                        span: tests/simple/input.rs:7:15: 7:16 (#0),
+                                                                    },
+                                                                    Expr {
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).17),
+                                                                        kind: Path(
+                                                                            Resolved(
+                                                                                None,
+                                                                                Path {
+                                                                                    span: tests/simple/input.rs:7:13: 7:14 (#0),
+                                                                                    res: Local(
+                                                                                        HirId(DefId(0:4 ~ input[326d]::foo).14),
+                                                                                    ),
+                                                                                    segments: [
+                                                                                        PathSegment {
+                                                                                            ident: a#0,
+                                                                                            hir_id: HirId(DefId(0:4 ~ input[326d]::foo).18),
+                                                                                            res: Local(
+                                                                                                HirId(DefId(0:4 ~ input[326d]::foo).14),
+                                                                                            ),
+                                                                                            args: None,
+                                                                                            infer_args: true,
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ),
+                                                                        ),
+                                                                        span: tests/simple/input.rs:7:13: 7:14 (#0),
+                                                                    },
+                                                                    Expr {
+                                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).19),
+                                                                        kind: Path(
+                                                                            Resolved(
+                                                                                None,
+                                                                                Path {
+                                                                                    span: tests/simple/input.rs:7:17: 7:18 (#0),
+                                                                                    res: Local(
+                                                                                        HirId(DefId(0:4 ~ input[326d]::foo).4),
+                                                                                    ),
+                                                                                    segments: [
+                                                                                        PathSegment {
+                                                                                            ident: y#0,
+                                                                                            hir_id: HirId(DefId(0:4 ~ input[326d]::foo).20),
+                                                                                            res: Local(
+                                                                                                HirId(DefId(0:4 ~ input[326d]::foo).4),
+                                                                                            ),
+                                                                                            args: None,
+                                                                                            infer_args: true,
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ),
+                                                                        ),
+                                                                        span: tests/simple/input.rs:7:17: 7:18 (#0),
+                                                                    },
+                                                                ),
+                                                                span: tests/simple/input.rs:7:13: 7:18 (#0),
+                                                            },
+                                                        ),
+                                                        els: None,
+                                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).21),
+                                                        span: tests/simple/input.rs:7:5: 7:19 (#0),
+                                                        source: Normal,
+                                                    },
+                                                ),
+                                                span: tests/simple/input.rs:7:5: 7:19 (#0),
+                                            },
+                                        ],
+                                        expr: Some(
+                                            Expr {
+                                                hir_id: HirId(DefId(0:4 ~ input[326d]::foo).23),
+                                                kind: Path(
+                                                    Resolved(
+                                                        None,
+                                                        Path {
+                                                            span: tests/simple/input.rs:9:5: 9:6 (#0),
+                                                            res: Local(
+                                                                HirId(DefId(0:4 ~ input[326d]::foo).22),
+                                                            ),
+                                                            segments: [
+                                                                PathSegment {
+                                                                    ident: b#0,
+                                                                    hir_id: HirId(DefId(0:4 ~ input[326d]::foo).24),
+                                                                    res: Local(
+                                                                        HirId(DefId(0:4 ~ input[326d]::foo).22),
+                                                                    ),
+                                                                    args: None,
+                                                                    infer_args: true,
+                                                                },
+                                                            ],
+                                                        },
+                                                    ),
+                                                ),
+                                                span: tests/simple/input.rs:9:5: 9:6 (#0),
+                                            },
+                                        ),
+                                        hir_id: HirId(DefId(0:4 ~ input[326d]::foo).7),
+                                        rules: DefaultBlock,
+                                        span: tests/simple/input.rs:5:39: 10:2 (#0),
+                                        targeted_by_break: false,
+                                    },
+                                    None,
+                                ),
+                                span: tests/simple/input.rs:5:39: 10:2 (#0),
+                            },
+                        },
+                    },
+                    opt_hash_including_bodies: None,
+                },
+                parenting: UnordMap {
+                    inner: {},
+                },
+                attrs: AttributeMap {
+                    map: {},
+                    define_opaque: None,
+                    opt_hash: None,
+                },
+                trait_map: UnordMap {
+                    inner: {},
+                },
+                delayed_lints: DelayedLints {
+                    lints: [],
+                    opt_hash: None,
+                },
+            },
+        ),
+    ],
+    opt_hir_hash: None,
+}
