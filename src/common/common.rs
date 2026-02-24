@@ -78,9 +78,10 @@ pub fn can_type_be_tupled(ty: &ast::Ty) -> bool {
     )
 }
 
+// FIXME: These next two functions need to be combined
 /// Naively determines if the passed in ast type is wrapped in a TaggedValue
 /// at the top level.
-pub fn is_type_tupled(ty: &ast::Ty) -> bool {
+pub fn is_type_tupled_value(ty: &ast::Ty) -> bool {
     let ty = ty.peel_refs(); // ignore & and &mut, we care about actual type
     match &ty.kind {
         rustc_ast::TyKind::Path(_, ast::Path { segments, .. }) => {
@@ -93,31 +94,63 @@ pub fn is_type_tupled(ty: &ast::Ty) -> bool {
                 == "TaggedValue"
         }
 
-        rustc_ast::TyKind::Array(ty, _) => is_type_tupled(ty),
+        _ => false,
+        // rustc_ast::TyKind::Array(ty, anon_const) => todo!(),
+        // rustc_ast::TyKind::Slice(ty) => todo!(),
+        // rustc_ast::TyKind::Ptr(mut_ty) => todo!(),
+        // rustc_ast::TyKind::Ref(lifetime, mut_ty) => todo!(),
+        // rustc_ast::TyKind::PinnedRef(lifetime, mut_ty) => todo!(),
+        // rustc_ast::TyKind::FnPtr(fn_ptr_ty) => todo!(),
+        // rustc_ast::TyKind::UnsafeBinder(unsafe_binder_ty) => todo!(),
+        // rustc_ast::TyKind::Never => todo!(),
+        // rustc_ast::TyKind::TraitObject(generic_bounds, trait_object_syntax) => todo!(),
+        // rustc_ast::TyKind::ImplTrait(node_id, generic_bounds) => todo!(),
+        // rustc_ast::TyKind::Paren(ty) => todo!(),
+        // rustc_ast::TyKind::Infer => todo!(),
+        // rustc_ast::TyKind::ImplicitSelf => todo!(),
+        // rustc_ast::TyKind::MacCall(mac_call) => todo!(),
+        // rustc_ast::TyKind::CVarArgs => todo!(),
+        // rustc_ast::TyKind::Pat(ty, ty_pat) => todo!(),
+        // rustc_ast::TyKind::Dummy => todo!(),
+        // rustc_ast::TyKind::Err(error_guaranteed) => todo!(),
+    }
+}
 
-        _ => false, // rustc_ast::TyKind::Slice(ty) => todo!(),
-                    // rustc_ast::TyKind::Ptr(mut_ty) => todo!(),
-                    // rustc_ast::TyKind::Ref(lifetime, mut_ty) => todo!(),
-                    // rustc_ast::TyKind::PinnedRef(lifetime, mut_ty) => todo!(),
-                    // rustc_ast::TyKind::FnPtr(fn_ptr_ty) => todo!(),
-                    // rustc_ast::TyKind::UnsafeBinder(unsafe_binder_ty) => todo!(),
-                    // rustc_ast::TyKind::Never => todo!(),
-                    // rustc_ast::TyKind::TraitObject(generic_bounds, trait_object_syntax) => todo!(),
-                    // rustc_ast::TyKind::ImplTrait(node_id, generic_bounds) => todo!(),
-                    // rustc_ast::TyKind::Paren(ty) => todo!(),
-                    // rustc_ast::TyKind::Infer => todo!(),
-                    // rustc_ast::TyKind::ImplicitSelf => todo!(),
-                    // rustc_ast::TyKind::MacCall(mac_call) => todo!(),
-                    // rustc_ast::TyKind::CVarArgs => todo!(),
-                    // rustc_ast::TyKind::Pat(ty, ty_pat) => todo!(),
-                    // rustc_ast::TyKind::Dummy => todo!(),
-                    // rustc_ast::TyKind::Err(error_guaranteed) => todo!(),
+pub fn is_type_tupled_array(ty: &ast::Ty) -> bool {
+    let ty = ty.peel_refs(); // ignore & and &mut, we care about actual type
+    match &ty.kind {
+        rustc_ast::TyKind::Path(_, ast::Path { segments, .. }) => {
+            segments
+                .iter()
+                .last()
+                .expect("Unable to find last struct ident in type")
+                .ident
+                .as_str()
+                == "TaggedArray"
+        }
+        _ => false,
     }
 }
 
 /// Takes an ast lifetime and turns it into a regular "'name" string.
 fn get_lifetime_string(lifetime: &ast::Lifetime) -> String {
     format!("'{}", lifetime.ident.to_string())
+}
+
+fn get_anon_const_string(anon_const: &ast::AnonConst) -> String {
+    let ast::AnonConst {
+        value:
+            box ast::Expr {
+                kind: ast::ExprKind::Lit(ast::token::Lit { symbol, .. }),
+                ..
+            },
+        ..
+    } = anon_const
+    else {
+        unreachable!("Attmempted to parse a non-Literal expression from an AnonConst");
+    };
+
+    format!("{}", symbol.as_str())
 }
 
 /// Converts an ast Ty into the full type string, recursively.
@@ -166,10 +199,7 @@ pub fn get_type_string(ty_path: &ast::Ty) -> String {
                                         match generic_arg {
                                             rustc_ast::GenericArg::Lifetime(lifetime) => get_lifetime_string(lifetime),
                                             rustc_ast::GenericArg::Type(box ty) => get_type_string(&ty),
-                                            rustc_ast::GenericArg::Const(anon_const) => {
-                                                // idt this is going to be helpful for us
-                                                unimplemented!()
-                                            },
+                                            rustc_ast::GenericArg::Const(anon_const) => get_anon_const_string(anon_const),
                                         }
                                     },
                                     rustc_ast::AngleBracketedArg::Constraint(assoc_item_constraint) => {

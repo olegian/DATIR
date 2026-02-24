@@ -3,8 +3,8 @@
  * After this pass, all declared types should be in a form which allows
  * unique tags to be carried alongside values.
 */
-use rustc_ast as ast;
 use rustc_ast::mut_visit::MutVisitor;
+use rustc_ast::{self as ast, GenericArgs};
 use rustc_span::{DUMMY_SP, Ident};
 
 use crate::common;
@@ -118,6 +118,33 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         );
     }
 
+    fn tuple_array(&self, array_ty: &mut ast::Ty) {
+        let ast::TyKind::Array(box ty, const_len) = &array_ty.kind else {
+            unreachable!("Attempting to create a TaggedArray from a non-Array TyKind");
+        };
+
+        let mut tagged_array = ast::PathSegment::from_ident(Ident::from_str("TaggedArray"));
+        tagged_array.args = Some(Box::new(GenericArgs::AngleBracketed(
+            ast::AngleBracketedArgs {
+                span: DUMMY_SP,
+                args: [
+                    ast::AngleBracketedArg::Arg(ast::GenericArg::Type(Box::new(ty.clone()))),
+                    ast::AngleBracketedArg::Arg(ast::GenericArg::Const(const_len.clone())),
+                ]
+                .into(),
+            },
+        )));
+
+        array_ty.kind = ast::TyKind::Path(
+            None,
+            ast::Path {
+                span: DUMMY_SP,
+                segments: [tagged_array].into(),
+                tokens: None,
+            },
+        );
+    }
+
     /// Searches through type `ty` to find and tuple all primitive types
     /// that should be tupled. Modifies the type in place.
     /// Strips off references (both & and &mut), acting on the actual referenced-types.
@@ -131,8 +158,9 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         }
 
         match &mut peeled_type.kind {
-            rustc_ast::TyKind::Slice(ty) | rustc_ast::TyKind::Array(ty, _) => {
-                self.recursively_tuple_type(ty);
+            rustc_ast::TyKind::Slice(inner_ty) | rustc_ast::TyKind::Array(inner_ty, _) => {
+                self.recursively_tuple_type(inner_ty);
+                self.tuple_array(ty);
             }
 
             rustc_ast::TyKind::Ptr(ast::MutTy { box ty, .. })

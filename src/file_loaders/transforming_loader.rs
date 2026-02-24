@@ -50,7 +50,9 @@ impl TransformingFileLoaderConfig {
     }
 
     pub fn release() -> Self {
-        Self { print_output: false }
+        Self {
+            print_output: false,
+        }
     }
 }
 
@@ -72,10 +74,7 @@ impl Passes {
 
 impl TransformingFileLoader {
     /// Constructor
-    pub fn new(
-        passes: Passes,
-        config: TransformingFileLoaderConfig,
-    ) -> Self {
+    pub fn new(passes: Passes, config: TransformingFileLoaderConfig) -> Self {
         Self {
             inner: RealFileLoader,
             passes,

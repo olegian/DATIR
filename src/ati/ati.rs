@@ -72,6 +72,21 @@ where
     }
 }
 
+pub struct TaggedArray<T, const N: usize>(pub [T; N], pub Id);
+impl<T, const N: usize> std::ops::Index<TaggedValue<usize>> for TaggedArray<T, N> {
+    type Output = T;
+
+    fn index(&self, index: TaggedValue<usize>) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl<T, const N: usize> std::ops::IndexMut<TaggedValue<usize>> for TaggedArray<T, N> {
+    fn index_mut(&mut self, index: TaggedValue<usize>) -> &mut Self::Output {
+        &mut self.0[index.0]
+    }
+}
+
 // Mostly for debugging purposes
 impl<T> std::fmt::Display for TaggedValue<T>
 where
@@ -535,6 +550,10 @@ impl UnionFind {
         self.introduce_tag(id)
     }
 
+    pub fn get_tag(&mut self) -> Id {
+        self.tagger.tag()
+    }
+
     /// Adds the passed in id to the UnionFind, in it's own set.
     /// If a set already exists for this Id, does nothing.
     pub fn introduce_tag(&mut self, id: Id) -> Id {
@@ -619,6 +638,10 @@ impl ATI {
         }
     }
 
+    pub fn get_tag() -> Id {
+        ATI_ANALYSIS.lock().unwrap().value_uf.get_tag()
+    }
+
     /// Moves a value from a standard type T to a TaggedValue<T>,
     /// assigning it a unique Id
     pub fn track<T>(value: T) -> TaggedValue<T>
@@ -627,6 +650,11 @@ impl ATI {
     {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
         TaggedValue::new(value, id)
+    }
+
+    pub fn track_array<T, const N: usize>(array: [T; N]) -> TaggedArray<T, N> {
+        let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+        TaggedArray(array, id)
     }
 
     /// Fetches a site, or creates it, with the given name.

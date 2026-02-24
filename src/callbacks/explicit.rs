@@ -6,23 +6,23 @@ use rustc_interface::interface;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::parse::ParseSess;
 
-use crate::{file_loaders::transforming_loader::{
-    FileType, Passes, TransformingFileLoader, TransformingFileLoaderConfig
-}, types::ati_info::FunctionBoundaries, visitors::{TupleLiteralsVisitor, UpdateFnDeclsVisitor, import_root_crate}};
+use crate::{
+    file_loaders::transforming_loader::{
+        FileType, Passes, TransformingFileLoader, TransformingFileLoaderConfig,
+    },
+    types::ati_info::FunctionBoundaries,
+    visitors::{
+        TupleLiteralsVisitor, UpdateFnDeclsVisitor, define_types_from_file, import_root_crate,
+    },
+};
 
 pub struct Explicit {
-    fbs: Arc<FunctionBoundaries>
+    fbs: Arc<FunctionBoundaries>,
 }
 
 impl Explicit {
-    pub fn new() -> Self {
-        Self {
-            fbs: Arc::new(FunctionBoundaries::new())
-        }
-    }
-
-    pub fn into_fbs(self) -> FunctionBoundaries {
-        Arc::into_inner(self.fbs).unwrap()
+    pub fn new(fbs: FunctionBoundaries) -> Self {
+        Self { fbs: Arc::new(fbs) }
     }
 }
 
@@ -32,9 +32,9 @@ impl<'a> rustc_driver::Callbacks for Explicit {
         // this loader will be the one responsible for adding all stubs,
         // tupling all literals, etc.
         let mut passes = Passes::new();
-        {
-            let fbs = self.fbs.clone();
-            passes.register(Box::new(move |psess: &ParseSess, mut krate: &mut ast::Crate, ftype: &FileType| {
+        let fbs = self.fbs.clone();
+        passes.register(Box::new(
+            move |psess: &ParseSess, mut krate: &mut ast::Crate, ftype: &FileType| {
                 let mut tl_vis = TupleLiteralsVisitor::new(&fbs);
                 tl_vis.visit_crate(&mut krate);
 
@@ -47,14 +47,13 @@ impl<'a> rustc_driver::Callbacks for Explicit {
                 // create all required function stubs, which perform site management
                 let fn_sigs = fn_decls_vis.get_new_fn_signatures();
                 fn_sigs.create_stub_items(&mut krate, &psess);
-                // create_stubs(&mut krate, &psess, &fn_sigs);
 
                 // make the ATI types available to dependancies
                 if matches!(ftype, FileType::Dep) {
                     import_root_crate(&mut krate, &psess);
                 }
-            }));
-        }
+            },
+        ));
 
         // use custom file loader to run passes over AST before continuing compilation
         config.file_loader = Some(Box::new(TransformingFileLoader::new(
@@ -62,14 +61,17 @@ impl<'a> rustc_driver::Callbacks for Explicit {
             TransformingFileLoaderConfig::debug(),
         )));
     }
-    
+
     /// Define necessary types in the root file. All other files will
     /// import these types from the root.
     fn after_crate_root_parsing(
         &mut self,
-        _compiler: &interface::Compiler,
-        _krate: &mut ast::Crate,
+        compiler: &interface::Compiler,
+        krate: &mut ast::Crate,
     ) -> Compilation {
+        let cwd = std::env::current_dir().unwrap();
+        define_types_from_file(&cwd.join("src/ati/ati.rs"), &compiler.sess.psess, krate);
+
         Compilation::Continue
     }
 

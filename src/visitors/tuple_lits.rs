@@ -4,8 +4,8 @@
  * within tracked functions (like when passed to an untracked function),
  * unbinding the tag from the value in that case (TaggedValue<T> -> T).
 */
-use rustc_ast as ast;
 use rustc_ast::mut_visit::{self, MutVisitor};
+use rustc_ast::{self as ast, DUMMY_NODE_ID};
 use rustc_span::{DUMMY_SP, Ident};
 
 use crate::common;
@@ -32,6 +32,10 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
                 if common::can_literal_be_tupled(&lit) {
                     *expr = self.tupleify_expr(expr);
                 }
+            }
+
+            ast::ExprKind::Array(_) | ast::ExprKind::Repeat(_, _) => {
+                *expr = self.tuplify_array(expr);
             }
 
             // Convert all invocations of untracked functions
@@ -65,7 +69,7 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
             // could this be done by overriding the index operator?
             // this works but I find myself squinting at it....
             ast::ExprKind::Index(_, index_expr, _) => {
-                index_expr.kind = self.unbind_tupled_expr(index_expr)
+                // index_expr.kind = self.unbind_tupled_expr(index_expr)
             }
 
             // TODO: handle macro invocationss similar to Call
@@ -90,6 +94,36 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
 impl<'a> TupleLiteralsVisitor<'a> {
     pub fn new(fbs: &'a FunctionBoundaries) -> Self {
         Self { fbs }
+    }
+
+    fn tuplify_array(&self, expr: &mut ast::Expr) -> ast::Expr {
+        let mut receiver_expr = ast::Expr::dummy();
+        receiver_expr.kind = ast::ExprKind::Path(
+            None,
+            ast::Path {
+                span: DUMMY_SP,
+                segments: [
+                    ast::PathSegment {
+                        ident: Ident::from_str("ATI"),
+                        id: DUMMY_NODE_ID,
+                        args: None,
+                    },
+                    ast::PathSegment {
+                        ident: Ident::from_str("track_array"),
+                        id: DUMMY_NODE_ID,
+                        args: None,
+                    },
+                ]
+                .into(),
+                tokens: None,
+            },
+        );
+
+        let mut new_expr = ast::Expr::dummy();
+        new_expr.kind =
+            ast::ExprKind::Call(Box::new(receiver_expr), [Box::new(expr.clone())].into());
+
+        new_expr
     }
 
     /// Takes an expression of type T and converts it to an expression of TaggedValue<T>,

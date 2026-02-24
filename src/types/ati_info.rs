@@ -198,8 +198,41 @@ impl FunctionSignatures {
         let mut res = Vec::new();
         match &ty.kind {
             ast::TyKind::Path(_, ast::Path { segments, .. }) => {
-                if common::is_type_tupled(&ty) {
+                if common::is_type_tupled_value(&ty) {
                     res.push(name.to_string());
+                } else if common::is_type_tupled_array(ty) {
+                    let Some(box ast::GenericArgs::AngleBracketed(ast::AngleBracketedArgs {
+                        args,
+                        ..
+                    })) = &segments.last().expect("FUCK").args
+                    else {
+                        unreachable!("TaggedArray type was missing generic parameters");
+                    };
+
+                    let ast::AngleBracketedArg::Arg(ast::GenericArg::Type(box ty)) = &args[0]
+                    else {
+                        unreachable!("TaggedArray first param was not the array data type");
+                    };
+
+                    let ast::AngleBracketedArg::Arg(ast::GenericArg::Const(ast::AnonConst {
+                        value:
+                            box ast::Expr {
+                                kind: ast::ExprKind::Lit(token::Lit { symbol, .. }),
+                                ..
+                            },
+                        ..
+                    })) = &args[1]
+                    else {
+                        unreachable!("TaggedArray first param was not the array data type");
+                    };
+
+                    let aps = self.get_tracked_access_path(name, ty);
+                    let size = symbol.as_str().parse::<usize>().unwrap();
+                    for i in 0..size {
+                        for ap in &aps {
+                            res.push(format!("{ap}.0[{i}]"))
+                        }
+                    }
                 } else if let Some(fields) = self
                     .def_structs
                     .get(segments.iter().last().unwrap().ident.as_str())
@@ -247,7 +280,12 @@ impl FunctionSignatures {
             }
 
             ast::TyKind::Tup(tys) => {
-                todo!()
+                for (i, ty) in tys.iter().enumerate() {
+                    let aps = self.get_tracked_access_path(&format!("{name}.{i}"), ty);
+                    for ap in aps.into_iter() {
+                        res.push(ap);
+                    }
+                }
             }
 
             _ => unreachable!(),
