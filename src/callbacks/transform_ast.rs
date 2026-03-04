@@ -16,17 +16,17 @@ use crate::{
     },
 };
 
-pub struct Explicit {
+pub struct TransformAbstractSyntaxTreeCallbacks {
     fbs: Arc<FunctionBoundaries>,
 }
 
-impl Explicit {
+impl TransformAbstractSyntaxTreeCallbacks {
     pub fn new(fbs: FunctionBoundaries) -> Self {
         Self { fbs: Arc::new(fbs) }
     }
 }
 
-impl<'a> rustc_driver::Callbacks for Explicit {
+impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
     fn config(&mut self, config: &mut interface::Config) {
         // use our custom loader to also instrument non-root files
         // this loader will be the one responsible for adding all stubs,

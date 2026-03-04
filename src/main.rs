@@ -34,6 +34,6 @@ pub fn main() {
     rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
     let fbs = gather_info.pull_function_boundaries();
 
-    let mut cbs = callbacks::explicit::Explicit::new(fbs);
+    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(fbs);
     rustc_driver::run_compiler(&args, &mut cbs);
 }
