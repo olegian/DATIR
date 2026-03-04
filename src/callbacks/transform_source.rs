@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use rustc_ast::{ast, mut_visit::MutVisitor};
 use rustc_driver::Compilation;
 use rustc_interface::interface;
@@ -10,48 +8,28 @@ use crate::{
     file_loaders::transforming_loader::{
         FileType, Passes, TransformingFileLoader, TransformingFileLoaderConfig,
     },
-    types::ati_info::FunctionBoundaries,
     visitors::{
-        TupleLiteralsVisitor, UpdateFnDeclsVisitor, define_types_from_file, import_root_crate,
+        AttributeExprsVisitor, TupleLiteralsVisitor, define_types_from_file
     },
 };
 
-pub struct Explicit {
-    fbs: Arc<FunctionBoundaries>,
-}
-
-impl Explicit {
-    pub fn new(fbs: FunctionBoundaries) -> Self {
-        Self { fbs: Arc::new(fbs) }
+pub struct TransformSourceCallback { }
+impl TransformSourceCallback {
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
-impl<'a> rustc_driver::Callbacks for Explicit {
+impl<'a> rustc_driver::Callbacks for TransformSourceCallback {
     fn config(&mut self, config: &mut interface::Config) {
         // use our custom loader to also instrument non-root files
         // this loader will be the one responsible for adding all stubs,
         // tupling all literals, etc.
         let mut passes = Passes::new();
-        let fbs = self.fbs.clone();
         passes.register(Box::new(
             move |psess: &ParseSess, mut krate: &mut ast::Crate, ftype: &FileType| {
-                let mut tl_vis = TupleLiteralsVisitor::new(&fbs);
+                let mut tl_vis = AttributeExprsVisitor::new();
                 tl_vis.visit_crate(&mut krate);
-
-                // discovers all functions that will be instrumented, and updates
-                // the function signatures to tag all passed-in params, if necessary.
-                // also updates type definitions in structs to have fields be tagged.
-                let mut fn_decls_vis = UpdateFnDeclsVisitor::new(&fbs);
-                fn_decls_vis.visit_crate(&mut krate);
-
-                // create all required function stubs, which perform site management
-                let fn_sigs = fn_decls_vis.get_new_fn_signatures();
-                fn_sigs.create_stub_items(&mut krate, &psess);
-
-                // make the ATI types available to dependancies
-                if matches!(ftype, FileType::Dep) {
-                    import_root_crate(&mut krate, &psess);
-                }
             },
         ));
 

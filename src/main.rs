@@ -19,7 +19,7 @@ extern crate rustc_span;
 
 use std::env;
 
-mod ati; // included just for code analysis to run on ati.rs
+mod ati; // allows rust-analyzer to run compilation checks on ati.rs
 mod callbacks;
 mod common;
 mod file_loaders;
@@ -30,10 +30,10 @@ mod visitors;
 pub fn main() {
     let args: Vec<_> = env::args().collect();
 
-    let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new();
-    rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
-    let fbs = gather_info.pull_function_boundaries();
+    // let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new();
+    // rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
+    // let fbs = gather_info.pull_function_boundaries();
 
-    let mut cbs = callbacks::explicit::Explicit::new(fbs);
+    let mut cbs = callbacks::transform_source::TransformSourceCallback::new();
     rustc_driver::run_compiler(&args, &mut cbs);
 }
