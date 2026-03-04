@@ -75,6 +75,8 @@ pub fn can_type_be_tupled(ty: &ast::Ty) -> bool {
             | sym::f32
             | sym::f64
             | sym::f128
+            | sym::isize
+            | sym::usize
     )
 }
 
@@ -134,7 +136,7 @@ pub fn is_type_tupled_array(ty: &ast::Ty) -> bool {
 
 /// Takes an ast lifetime and turns it into a regular "'name" string.
 fn get_lifetime_string(lifetime: &ast::Lifetime) -> String {
-    format!("'{}", lifetime.ident.to_string())
+    lifetime.ident.to_string()
 }
 
 fn get_anon_const_string(anon_const: &ast::AnonConst) -> String {

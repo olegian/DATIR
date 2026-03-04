@@ -168,6 +168,7 @@ impl FunctionSignatures {
 
     fn create_site_binds(&self, site_name: &str, fn_name: &str) -> Vec<String> {
         let (inputs, _) = self.fn_sigs.get(fn_name).unwrap();
+        println!("{:?}", inputs);
 
         // at this point, inputs should have been wrapped in TV<> if possible
         inputs
@@ -176,22 +177,91 @@ impl FunctionSignatures {
                 matches!(
                     &param.ty.kind,
                     ast::TyKind::Array(_, _)
+                        | ast::TyKind::Slice(_)
                         | ast::TyKind::Ref(_, _)
                         | ast::TyKind::Tup(_)
                         | ast::TyKind::Path(_, _)
                 )
             })
             .map(|param| {
-                let name = self.get_param_name(param);
-                let access_paths = self.get_tracked_access_path(&name, &param.ty);
-                println!("{access_paths:?}");
-                access_paths
-                    .iter()
-                    .map(|ap| format!(r#"{site_name}.bind("{ap}", &{ap});"#))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                let var_name = self.get_param_name(param);
+                self.create_bind_statements(site_name, var_name, &param.ty).join("\n")
+
+                // let binds = self.get_repr_to_access_path(name, &param.ty);
+                // binds.iter().map(|(repr, ap)| format!(r#"{site_name}.bind("{repr}", &{ap});"#))
+                //     .collect::<Vec<_>>()
+                //     .join("\n")
             })
-            .collect()
+            .collect::<Vec<String>>()
+
+        // vec!["AAAAAAAAAAAA".into()]
+    }
+
+    fn create_bind_statements(&self, site_name: &str, name: String, ty: &ast::Ty) -> Vec<String> {
+        match &ty.kind {
+            ast::TyKind::Slice(ty) => {
+                /*
+                    my_param: &('a)?[T] 
+
+                    for (i, p) in my_param.iter().enumerate() {
+                        site.bind(format!("my_param[{i}]"), &p);
+                    }
+                */ 
+                let aps = self.get_tracked_access_path(&name, ty);
+                aps.into_iter().map(|ap| {
+                    let apc = &ap;
+                    format!(r#"
+                        for (i, p) in {name}.iter().enumerate() {{
+                            {site_name}.bind("{name}[i]{apc}", p[i]);
+                        }}
+                    "#)
+                }).collect()
+            },
+            ast::TyKind::Array(ty, anon_const) => {
+                let ast::ExprKind::Lit(token::Lit { kind, symbol, suffix }) = anon_const.value.kind else {
+                    panic!("AAA");
+                };
+
+                let n = symbol.as_str().parse::<usize>();
+                let aps = self.get_tracked_access_path(&name, ty);
+                aps.into_iter().map(|ap| {
+                    let apc = &ap;
+                    format!(r#"
+                        for i in 0..n {{
+                            {site_name}.bind("{name}[i]{apc}", p[i]);
+                        }}
+                    "#)
+                }).collect()
+            },
+            ast::TyKind::Tup(thin_vec) => {
+                vec![]
+            },
+            ast::TyKind::Ptr(mut_ty) => {
+                vec![]
+            },
+            ast::TyKind::Ref(lifetime, mut_ty) => {
+                vec![]
+            },
+            ast::TyKind::Path(qself, path) => {
+                vec![]
+            },
+            _ => panic!("Cannot construct bind statement for {name} with type: {ty:?}"),
+
+            // ast::TyKind::PinnedRef(lifetime, mut_ty) => todo!(),
+            // ast::TyKind::FnPtr(fn_ptr_ty) => todo!(),
+            // ast::TyKind::UnsafeBinder(unsafe_binder_ty) => todo!(),
+            // ast::TyKind::Never => todo!(),
+            // ast::TyKind::TraitObject(generic_bounds, trait_object_syntax) => todo!(),
+            // ast::TyKind::ImplTrait(node_id, generic_bounds) => todo!(),
+            // ast::TyKind::Paren(ty) => todo!(),
+            // ast::TyKind::Infer => todo!(),
+            // ast::TyKind::ImplicitSelf => todo!(),
+            // ast::TyKind::MacCall(mac_call) => todo!(),
+            // ast::TyKind::CVarArgs => todo!(),
+            // ast::TyKind::Pat(ty, ty_pat) => todo!(),
+            // ast::TyKind::Dummy => todo!(),
+            // ast::TyKind::Err(error_guaranteed) => todo!(),
+        }
     }
 
     fn get_tracked_access_path(&self, name: &str, ty: &ast::Ty) -> Vec<String> {
@@ -204,7 +274,10 @@ impl FunctionSignatures {
                     let Some(box ast::GenericArgs::AngleBracketed(ast::AngleBracketedArgs {
                         args,
                         ..
-                    })) = &segments.last().expect("FUCK").args
+                    })) = &segments
+                        .last()
+                        .expect("Found Path type with no segments")
+                        .args
                     else {
                         unreachable!("TaggedArray type was missing generic parameters");
                     };
@@ -288,8 +361,11 @@ impl FunctionSignatures {
                 }
             }
 
+            ast::TyKind::Slice(ty) => {
+                
+            },
+
             _ => unreachable!(),
-            // ast::TyKind::Slice(ty) => todo!(),
             // ast::TyKind::Ptr(mut_ty) => todo!(),
             // ast::TyKind::PinnedRef(lifetime, mut_ty) => todo!(),
             // ast::TyKind::FnPtr(fn_ptr_ty) => todo!(),

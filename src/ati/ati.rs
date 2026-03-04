@@ -56,6 +56,8 @@ impl Tagger {
 /// is updated to record the interaction.
 #[derive(Debug, Clone, Copy)]
 pub struct TaggedValue<T: Copy>(pub T, pub Id);
+pub struct TaggedArray<T, const N: usize>(pub [T; N], pub Id);
+pub struct TaggedSlice<'a, T>(pub &'a mut [T], pub Id);
 
 impl<T> TaggedValue<T>
 where
@@ -72,7 +74,28 @@ where
     }
 }
 
-pub struct TaggedArray<T, const N: usize>(pub [T; N], pub Id);
+// impl<T: Copy, const N: usize> From<[TaggedValue<T>; N]> for TaggedArray<TaggedValue<T>, N> {
+//     fn from(array: [TaggedValue<T>; N]) -> Self {
+//         for i in 0..(N-1) {
+//             ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
+//         }
+
+//         let len_id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+//         TaggedArray(array, len_id)
+//     }
+// }
+
+// impl<T, const N: usize> From<[T; N]> for TaggedArray<T, N> {
+//     fn from(array: [T; N]) -> Self {
+//        for i in 0..(N-1) {
+//            ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
+//        }
+
+//         let len_id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+//         TaggedArray(array, len_id)
+//     }
+// }
+
 impl<T, const N: usize> std::ops::Index<TaggedValue<usize>> for TaggedArray<T, N> {
     type Output = T;
 
@@ -84,6 +107,31 @@ impl<T, const N: usize> std::ops::Index<TaggedValue<usize>> for TaggedArray<T, N
 impl<T, const N: usize> std::ops::IndexMut<TaggedValue<usize>> for TaggedArray<T, N> {
     fn index_mut(&mut self, index: TaggedValue<usize>) -> &mut Self::Output {
         &mut self.0[index.0]
+    }
+}
+
+impl<T, const N: usize> TaggedArray<T, N> {
+    fn len(&self) -> TaggedValue<usize> {
+        TaggedValue::new(N, self.1)
+    }
+}
+impl<T> std::ops::Index<TaggedValue<usize>> for TaggedSlice<'_, T> {
+    type Output = T;
+
+    fn index(&self, index: TaggedValue<usize>) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl<T> std::ops::IndexMut<TaggedValue<usize>> for TaggedSlice<'_, T> {
+    fn index_mut(&mut self, index: TaggedValue<usize>) -> &mut Self::Output {
+        &mut self.0[index.0]
+    }
+}
+
+impl<T> TaggedSlice<'_, T> {
+    fn len(&self) -> TaggedValue<usize> {
+        TaggedValue::new(self.0.len(), self.1)
     }
 }
 
@@ -550,10 +598,6 @@ impl UnionFind {
         self.introduce_tag(id)
     }
 
-    pub fn get_tag(&mut self) -> Id {
-        self.tagger.tag()
-    }
-
     /// Adds the passed in id to the UnionFind, in it's own set.
     /// If a set already exists for this Id, does nothing.
     pub fn introduce_tag(&mut self, id: Id) -> Id {
@@ -638,10 +682,6 @@ impl ATI {
         }
     }
 
-    pub fn get_tag() -> Id {
-        ATI_ANALYSIS.lock().unwrap().value_uf.get_tag()
-    }
-
     /// Moves a value from a standard type T to a TaggedValue<T>,
     /// assigning it a unique Id
     pub fn track<T>(value: T) -> TaggedValue<T>
@@ -652,10 +692,43 @@ impl ATI {
         TaggedValue::new(value, id)
     }
 
-    pub fn track_array<T, const N: usize>(array: [T; N]) -> TaggedArray<T, N> {
+    pub fn track_array<T: Copy, const N: usize>(array: [TaggedValue<T>; N]) -> TaggedArray<TaggedValue<T>, N> {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+        for i in 0..(N-1) {
+            ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
+        }
+
         TaggedArray(array, id)
     }
+
+    pub fn track_slice<T: Copy>(slice: &mut [TaggedValue<T>]) -> TaggedSlice<TaggedValue<T>> {
+        let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+
+        let n = slice.len();
+        for i in 0..(n-1) {
+            ATI_ANALYSIS.lock().unwrap().union_tags(&slice[i], &slice[i+1]);
+        }
+
+        TaggedSlice(slice, id)
+    }
+
+    // pub fn track_array<T: Copy + 'static, const N: usize>(array: [T; N]) -> TaggedArray<T, N>
+    // where
+    //     T: std::fmt::Debug,
+    // {
+    //     let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+    //     // TODO: merge together all tags in array
+    //     if TypeId::of::<T>() == TypeId::of::<TaggedValue<usize>>() {
+    //         for i in 0..(N-1) {
+    //             let tv1 = unsafe { std::mem::transmute::<T, TaggedValue<usize>>(array[i]) };
+    //             let tv2 = unsafe { std::mem::transmute::<T, TaggedValue<usize>>(array[i]) };
+
+    //             ATI_ANALYSIS.lock().unwrap().union_tags(&tv1, &tv2);
+    //         }
+    //     }
+
+    //     TaggedArray(array, id)
+    // }
 
     /// Fetches a site, or creates it, with the given name.
     pub fn get_site(&mut self, name: &str) -> Site {

@@ -118,9 +118,39 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         );
     }
 
+    fn tuple_slice(&self, slice_ty: &mut ast::Ty) {
+        // let ast::TyKind::Ref(lifetime, ast::MutTy {
+        //     box ty,
+        //     mutbl,
+        // }) = &slice_ty.kind else {
+        //     panic!("attempting to construct a TaggedSlice out of a non-Slice type: {:?}", slice_ty);
+        // };
+
+        let mut tagged_slice = ast::PathSegment::from_ident(Ident::from_str("TaggedSlice"));
+        tagged_slice.args = Some(Box::new(GenericArgs::AngleBracketed(
+            ast::AngleBracketedArgs {
+                span: DUMMY_SP,
+                args: [
+                    ast::AngleBracketedArg::Arg(ast::GenericArg::Type(Box::new(slice_ty.clone()))),
+                ]
+                .into(),
+            },
+        )));
+
+        slice_ty.kind = ast::TyKind::Path(
+            None,
+            ast::Path {
+                span: DUMMY_SP,
+                segments: [tagged_slice].into(),
+                tokens: None,
+            },
+        );
+
+    }
+
     fn tuple_array(&self, array_ty: &mut ast::Ty) {
-        let ast::TyKind::Array(box ty, const_len) = &array_ty.kind else {
-            unreachable!("Attempting to create a TaggedArray from a non-Array TyKind");
+        let ast::TyKind::Array(box ty, anon_const) = &array_ty.kind else {
+            panic!("attempting to construct a TaggedArray out of a non-Array type");
         };
 
         let mut tagged_array = ast::PathSegment::from_ident(Ident::from_str("TaggedArray"));
@@ -129,7 +159,7 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
                 span: DUMMY_SP,
                 args: [
                     ast::AngleBracketedArg::Arg(ast::GenericArg::Type(Box::new(ty.clone()))),
-                    ast::AngleBracketedArg::Arg(ast::GenericArg::Const(const_len.clone())),
+                    ast::AngleBracketedArg::Arg(ast::GenericArg::Const(anon_const.clone())),
                 ]
                 .into(),
             },
@@ -158,7 +188,12 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         }
 
         match &mut peeled_type.kind {
-            rustc_ast::TyKind::Slice(inner_ty) | rustc_ast::TyKind::Array(inner_ty, _) => {
+            rustc_ast::TyKind::Slice(inner_ty) => {
+                self.recursively_tuple_type(inner_ty);
+                self.tuple_slice(ty);
+            }
+            
+            rustc_ast::TyKind::Array(inner_ty, _) => {
                 self.recursively_tuple_type(inner_ty);
                 self.tuple_array(ty);
             }
@@ -238,7 +273,7 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
                                 ..
                             }) => {
                                 for input in inputs {
-                                    self.recursively_tuple_type(input)
+                                    self.recursively_tuple_type(input);
                                 }
 
                                 if let ast::FnRetTy::Ty(box ty) = output {

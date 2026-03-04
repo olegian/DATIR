@@ -17,8 +17,8 @@ pub struct TupleLiteralsVisitor<'a> {
 
 impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
     // define to stop visitor from modifying any expressions used as types
-    fn visit_param(&mut self, node: &mut ast::Param) {}
-    fn visit_anon_const(&mut self, node: &mut rustc_ast::AnonConst) {}
+    fn visit_param(&mut self, _node: &mut ast::Param) {}
+    fn visit_anon_const(&mut self, _node: &mut rustc_ast::AnonConst) {}
 
     /// Converts all literals into TaggedValue<T>'s
     /// while making sure those values are correctly passed
@@ -30,7 +30,7 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
             // Convert all literals into TaggedValues, if necessary
             ast::ExprKind::Lit(lit) => {
                 if common::can_literal_be_tupled(&lit) {
-                    *expr = self.tupleify_expr(expr);
+                    *expr = self.tuplify_expr(expr);
                 }
             }
 
@@ -58,7 +58,7 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
                         // owned values are safe to move in?
                         // TODO: use ret_ty to resolve ^
                         if common::can_type_string_be_tupled(ret_ty) {
-                            *expr = self.tupleify_expr(expr);
+                            *expr = self.tuplify_expr(expr);
                         }
                     }
                 }
@@ -128,7 +128,7 @@ impl<'a> TupleLiteralsVisitor<'a> {
 
     /// Takes an expression of type T and converts it to an expression of TaggedValue<T>,
     /// by using the ATI::track function from ati.rs
-    fn tupleify_expr(&self, expr: &ast::Expr) -> ast::Expr {
+    fn tuplify_expr(&self, expr: &ast::Expr) -> ast::Expr {
         ast::Expr {
             id: ast::DUMMY_NODE_ID,
             kind: ast::ExprKind::Call(
