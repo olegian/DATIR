@@ -134,6 +134,23 @@ pub fn is_type_tupled_array(ty: &ast::Ty) -> bool {
     }
 }
 
+pub fn is_type_tupled_slice(ty: &ast::Ty) -> bool {
+    let ty = ty.peel_refs(); // ignore & and &mut, we care about actual type
+    match &ty.kind {
+        rustc_ast::TyKind::Path(_, ast::Path { segments, .. }) => {
+            segments
+                .iter()
+                .last()
+                .expect("Unable to find last struct ident in type")
+                .ident
+                .as_str()
+                == "TaggedSlice"
+        }
+        _ => false,
+    }
+}
+
+
 /// Takes an ast lifetime and turns it into a regular "'name" string.
 fn get_lifetime_string(lifetime: &ast::Lifetime) -> String {
     lifetime.ident.to_string()

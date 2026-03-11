@@ -168,7 +168,6 @@ impl FunctionSignatures {
 
     fn create_site_binds(&self, site_name: &str, fn_name: &str) -> Vec<String> {
         let (inputs, _) = self.fn_sigs.get(fn_name).unwrap();
-        println!("{:?}", inputs);
 
         // at this point, inputs should have been wrapped in TV<> if possible
         inputs
@@ -185,6 +184,7 @@ impl FunctionSignatures {
             })
             .map(|param| {
                 let var_name = self.get_param_name(param);
+                println!("{var_name}");
                 self.create_bind_statements(site_name, var_name, &param.ty).join("\n")
 
                 // let binds = self.get_repr_to_access_path(name, &param.ty);
@@ -198,6 +198,7 @@ impl FunctionSignatures {
     }
 
     fn create_bind_statements(&self, site_name: &str, name: String, ty: &ast::Ty) -> Vec<String> {
+        println!("CCCCCCCCCCCCCCCCCCCC: {name}: {ty:?}");
         match &ty.kind {
             ast::TyKind::Slice(ty) => {
                 /*
@@ -207,31 +208,10 @@ impl FunctionSignatures {
                         site.bind(format!("my_param[{i}]"), &p);
                     }
                 */ 
-                let aps = self.get_tracked_access_path(&name, ty);
-                aps.into_iter().map(|ap| {
-                    let apc = &ap;
-                    format!(r#"
-                        for (i, p) in {name}.iter().enumerate() {{
-                            {site_name}.bind("{name}[i]{apc}", p[i]);
-                        }}
-                    "#)
-                }).collect()
+                vec![]
             },
             ast::TyKind::Array(ty, anon_const) => {
-                let ast::ExprKind::Lit(token::Lit { kind, symbol, suffix }) = anon_const.value.kind else {
-                    panic!("AAA");
-                };
-
-                let n = symbol.as_str().parse::<usize>();
-                let aps = self.get_tracked_access_path(&name, ty);
-                aps.into_iter().map(|ap| {
-                    let apc = &ap;
-                    format!(r#"
-                        for i in 0..n {{
-                            {site_name}.bind("{name}[i]{apc}", p[i]);
-                        }}
-                    "#)
-                }).collect()
+                vec![]
             },
             ast::TyKind::Tup(thin_vec) => {
                 vec![]
@@ -243,7 +223,33 @@ impl FunctionSignatures {
                 vec![]
             },
             ast::TyKind::Path(qself, path) => {
-                vec![]
+                if common::is_type_tupled_value(ty) {
+                    vec![
+                        format!(r#"{site_name}.bind("{name}", &{name});"#)
+                    ]
+                } else if common::is_type_tupled_array(ty) {
+                    let aps = self.get_tracked_access_path(&name, ty);
+                    aps.into_iter().map(|ap| {
+                        let apc = &ap;
+                        format!(r#"
+                            for (i, p) in {name}.0.iter().enumerate() {{
+                                {site_name}.bind("{apc}", &{ap});
+                            }}
+                        "#)
+                    }).collect()
+                } else if common::is_type_tupled_slice(ty) {
+                    let aps = self.get_tracked_access_path(&name, ty);
+                    aps.into_iter().map(|ap| {
+                        let apc = &ap;
+                        format!(r#"
+                            for (i, p) in {name}.iter().enumerate() {{
+                                {site_name}.bind("{apc}", {ap});
+                            }}
+                        "#)
+                    }).collect()
+                } else {
+                    vec![]
+                }
             },
             _ => panic!("Cannot construct bind statement for {name} with type: {ty:?}"),
 

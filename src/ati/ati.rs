@@ -55,87 +55,58 @@ impl Tagger {
 /// are observed interacting through these operators, global `ATI_ANALYSIS`
 /// is updated to record the interaction.
 #[derive(Debug, Clone, Copy)]
-pub struct TaggedValue<T: Copy>(pub T, pub Id);
-pub struct TaggedArray<T, const N: usize>(pub [T; N], pub Id);
-pub struct TaggedSlice<'a, T>(pub &'a mut [T], pub Id);
-
-impl<T> TaggedValue<T>
-where
-    T: Copy,
-{
-    /// Creates a new TaggedValue, given the parameters
-    pub fn new(value: T, id: Id) -> Self {
-        Self(value, id)
-    }
-
-    /// Copies the value out of the struct
-    pub fn unbind(&self) -> T {
-        self.0
-    }
-}
-
-// impl<T: Copy, const N: usize> From<[TaggedValue<T>; N]> for TaggedArray<TaggedValue<T>, N> {
-//     fn from(array: [TaggedValue<T>; N]) -> Self {
-//         for i in 0..(N-1) {
-//             ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
-//         }
-
-//         let len_id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
-//         TaggedArray(array, len_id)
-//     }
-// }
-
-// impl<T, const N: usize> From<[T; N]> for TaggedArray<T, N> {
-//     fn from(array: [T; N]) -> Self {
-//        for i in 0..(N-1) {
-//            ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
-//        }
-
-//         let len_id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
-//         TaggedArray(array, len_id)
-//     }
-// }
+pub struct TaggedValue<T: Copy>(pub Id, pub T);
+pub struct TaggedArray<T, const N: usize>(pub Id, pub [T; N]);
+pub struct TaggedSlice<T>(pub Id, [T]);
 
 impl<T, const N: usize> std::ops::Index<TaggedValue<usize>> for TaggedArray<T, N> {
     type Output = T;
 
     fn index(&self, index: TaggedValue<usize>) -> &Self::Output {
-        &self.0[index.0]
+        &self.1[index.1]
     }
 }
 
 impl<T, const N: usize> std::ops::IndexMut<TaggedValue<usize>> for TaggedArray<T, N> {
     fn index_mut(&mut self, index: TaggedValue<usize>) -> &mut Self::Output {
-        &mut self.0[index.0]
+        &mut self.1[index.1]
     }
 }
 
 impl<T, const N: usize> TaggedArray<T, N> {
     fn len(&self) -> TaggedValue<usize> {
-        TaggedValue::new(N, self.1)
+        TaggedValue(self.0, N)
     }
 }
-impl<T> std::ops::Index<TaggedValue<usize>> for TaggedSlice<'_, T> {
+impl<T> std::ops::Index<TaggedValue<usize>> for TaggedSlice<T> {
     type Output = T;
 
     fn index(&self, index: TaggedValue<usize>) -> &Self::Output {
-        &self.0[index.0]
+        &self.1[index.1]
     }
 }
 
-impl<T> std::ops::IndexMut<TaggedValue<usize>> for TaggedSlice<'_, T> {
+impl<T> std::ops::IndexMut<TaggedValue<usize>> for TaggedSlice<T> {
     fn index_mut(&mut self, index: TaggedValue<usize>) -> &mut Self::Output {
-        &mut self.0[index.0]
+        &mut self.1[index.1]
     }
 }
 
-impl<T> TaggedSlice<'_, T> {
+impl<T> TaggedSlice<T> {
     fn len(&self) -> TaggedValue<usize> {
-        TaggedValue::new(self.0.len(), self.1)
+        TaggedValue(self.0, self.1.len())
     }
 }
 
-// Mostly for debugging purposes
+impl<'a, T, const N: usize> std::ops::Deref for TaggedArray<T, N> {
+    type Target = TaggedSlice<T>;
+
+    fn deref(&self) -> &Self::Target {
+        todo!()
+    }
+}
+
+// for debugging purposes
 impl<T> std::fmt::Display for TaggedValue<T>
 where
     T: Copy + std::fmt::Display,
@@ -153,7 +124,7 @@ where
     type Output = TaggedValue<T>;
 
     fn add(self, rhs: TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 + rhs.0);
+        let res = ATI::track(self.1 + rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -170,7 +141,7 @@ where
     type Output = TaggedValue<T>;
 
     fn add(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 + rhs.0);
+        let res = ATI::track(self.1 + rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -187,7 +158,7 @@ where
     type Output = TaggedValue<T>;
 
     fn add(self, rhs: TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 + rhs.0);
+        let res = ATI::track(self.1 + rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -204,7 +175,7 @@ where
     type Output = TaggedValue<T>;
 
     fn add(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 + rhs.0);
+        let res = ATI::track(self.1 + rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -221,7 +192,7 @@ where
     type Output = TaggedValue<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let res = ATI::track(self.0 - rhs.0);
+        let res = ATI::track(self.1 - rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -238,7 +209,7 @@ where
     type Output = TaggedValue<T>;
 
     fn sub(self, rhs: &Self) -> Self::Output {
-        let res = ATI::track(self.0 - rhs.0);
+        let res = ATI::track(self.1 - rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -255,7 +226,7 @@ where
     type Output = TaggedValue<T>;
 
     fn sub(self, rhs: TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 - rhs.0);
+        let res = ATI::track(self.1 - rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -272,7 +243,7 @@ where
     type Output = TaggedValue<T>;
 
     fn sub(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 - rhs.0);
+        let res = ATI::track(self.1 - rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -289,7 +260,7 @@ where
     type Output = TaggedValue<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let res = ATI::track(self.0 * rhs.0);
+        let res = ATI::track(self.1 * rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -306,7 +277,7 @@ where
     type Output = TaggedValue<T>;
 
     fn mul(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 * rhs.0);
+        let res = ATI::track(self.1 * rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -323,7 +294,7 @@ where
     type Output = TaggedValue<T>;
 
     fn mul(self, rhs: TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 * rhs.0);
+        let res = ATI::track(self.1 * rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -340,7 +311,7 @@ where
     type Output = TaggedValue<T>;
 
     fn mul(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 * rhs.0);
+        let res = ATI::track(self.1 * rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -357,7 +328,7 @@ where
     type Output = TaggedValue<T>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let res = ATI::track(self.0 / rhs.0);
+        let res = ATI::track(self.1 / rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -374,7 +345,7 @@ where
     type Output = TaggedValue<T>;
 
     fn div(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 / rhs.0);
+        let res = ATI::track(self.1 / rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -391,7 +362,7 @@ where
     type Output = TaggedValue<T>;
 
     fn div(self, rhs: TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 / rhs.0);
+        let res = ATI::track(self.1 / rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -408,7 +379,7 @@ where
     type Output = TaggedValue<T>;
 
     fn div(self, rhs: &TaggedValue<T>) -> Self::Output {
-        let res = ATI::track(self.0 / rhs.0);
+        let res = ATI::track(self.1 / rhs.1);
 
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         ati.union_tags(&self, &rhs);
@@ -424,7 +395,7 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         ATI_ANALYSIS.lock().unwrap().union_tags(&self, &other);
-        self.0 == other.0
+        self.1 == other.1
     }
 }
 impl<T> Eq for TaggedValue<T> where T: Copy + PartialEq {}
@@ -435,7 +406,7 @@ where
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         ATI_ANALYSIS.lock().unwrap().union_tags(&self, other);
-        match self.0.partial_cmp(&other.0) {
+        match self.1.partial_cmp(&other.1) {
             Some(core::cmp::Ordering::Equal) => Some(core::cmp::Ordering::Equal),
             ord => return ord,
         }
@@ -448,7 +419,7 @@ where
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         ATI_ANALYSIS.lock().unwrap().union_tags(&self, other);
-        self.0.cmp(&other.0)
+        self.1.cmp(&other.1)
     }
 }
 
@@ -460,7 +431,7 @@ where
     where
         H: std::hash::Hasher,
     {
-        self.0.hash(hasher)
+        self.1.hash(hasher)
     }
 }
 
@@ -499,7 +470,7 @@ impl Site {
     where
         T: Copy,
     {
-        self.observed_var_tags.push((var_name.into(), tv.1));
+        self.observed_var_tags.push((var_name.into(), tv.0));
     }
 
     /// Algorithm from paper, updates ATI information based on observed_vars
@@ -689,7 +660,7 @@ impl ATI {
         T: Copy,
     {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
-        TaggedValue::new(value, id)
+        TaggedValue(id, value)
     }
 
     pub fn track_array<T: Copy, const N: usize>(array: [TaggedValue<T>; N]) -> TaggedArray<TaggedValue<T>, N> {
@@ -698,37 +669,19 @@ impl ATI {
             ATI_ANALYSIS.lock().unwrap().union_tags(&array[i], &array[i+1]);
         }
 
-        TaggedArray(array, id)
+        TaggedArray(id, array)
     }
 
-    pub fn track_slice<T: Copy>(slice: &mut [TaggedValue<T>]) -> TaggedSlice<TaggedValue<T>> {
+    pub fn track_slice<T: Copy, const N : usize>(array: [TaggedValue<T>; N]) -> TaggedSlice<TaggedValue<T>> {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
 
-        let n = slice.len();
+        let n = array.len();
         for i in 0..(n-1) {
             ATI_ANALYSIS.lock().unwrap().union_tags(&slice[i], &slice[i+1]);
         }
 
-        TaggedSlice(slice, id)
+        TaggedSlice(id, slice as [TaggedValue<T>])
     }
-
-    // pub fn track_array<T: Copy + 'static, const N: usize>(array: [T; N]) -> TaggedArray<T, N>
-    // where
-    //     T: std::fmt::Debug,
-    // {
-    //     let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
-    //     // TODO: merge together all tags in array
-    //     if TypeId::of::<T>() == TypeId::of::<TaggedValue<usize>>() {
-    //         for i in 0..(N-1) {
-    //             let tv1 = unsafe { std::mem::transmute::<T, TaggedValue<usize>>(array[i]) };
-    //             let tv2 = unsafe { std::mem::transmute::<T, TaggedValue<usize>>(array[i]) };
-
-    //             ATI_ANALYSIS.lock().unwrap().union_tags(&tv1, &tv2);
-    //         }
-    //     }
-
-    //     TaggedArray(array, id)
-    // }
 
     /// Fetches a site, or creates it, with the given name.
     pub fn get_site(&mut self, name: &str) -> Site {
@@ -748,7 +701,7 @@ impl ATI {
     where
         T: Copy,
     {
-        self.value_uf.union_tags(&tv1.1, &tv2.1);
+        self.value_uf.union_tags(&tv1.0, &tv2.0);
     }
 
     /// Produce output partition that defines abstract types.
