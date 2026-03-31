@@ -37,8 +37,8 @@ pub fn main() {
     let args: Vec<_> = env::args().collect();
 
     // configure debug logging...
-    let mut logs = std::env::current_dir().unwrap();
-    let logs = logs.into_boxed_path();
+    let logs = std::env::current_dir().unwrap();
+    let logs = logs.join("logs").into_boxed_path();
     let config = Arc::new(DatirConfig::debug(Some(logs)));
 
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());

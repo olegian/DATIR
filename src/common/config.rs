@@ -16,10 +16,10 @@ impl DatirConfig {
     /// Simple configuration intended to be used for debugging.
     pub fn debug(log_dir: Option<Box<Path>>) -> Self {
         // make sure log directory exists and is empty
-        // if let Some(dir) = &log_dir {
-        //     let _ = std::fs::remove_dir_all(dir);
-        //     std::fs::create_dir_all(dir);
-        // }
+        if let Some(dir) = &log_dir {
+            let _ = std::fs::remove_dir_all(dir);
+            std::fs::create_dir_all(dir);
+        }
 
         Self {
             log_dir,
