@@ -74,9 +74,9 @@ impl Default for FirstPassInfo {
 impl FirstPassInfo {
     /// register that a function with `ident` and `def_id` should
     /// instrumented later
-    // NOTE: This is only really useful for extern crates and library files 
+    // NOTE: This is only really useful for extern crates and library files
     // that we are unable to instrument. For now, there is no reason to do this
-    // as we assume that all code 
+    // as we assume that all code
     pub fn observe_tracked_fn(&mut self, ident: &Ident, def_id: DefId) {
         self.tracked_fn_idents.insert(ident.clone());
         self.tracked_fn_def_ids.insert(def_id);
@@ -208,7 +208,8 @@ impl FunctionSignatures {
             suffix += 1;
             candidate = format!("{local_name}_unstubbed_{suffix}");
         }
-        self.rename_map.insert(map_key.to_string(), candidate.clone());
+        self.rename_map
+            .insert(map_key.to_string(), candidate.clone());
         candidate
     }
 
@@ -456,9 +457,9 @@ impl FunctionSignatures {
             .unzip();
 
         let declared_params = match (receiver_decl.is_empty(), other_declared.is_empty()) {
-            (true, _) => other_declared.join(", "),      // no self parameter
-            (false, true) => receiver_decl.to_string(),  // self parameter, with no other params
-            (false, false) => format!("{receiver_decl}, {}", other_declared.join(", ")),   // self param and other params
+            (true, _) => other_declared.join(", "), // no self parameter
+            (false, true) => receiver_decl.to_string(), // self parameter, with no other params
+            (false, false) => format!("{receiver_decl}, {}", other_declared.join(", ")), // self param and other params
         };
 
         let passed_params = other_passed.join(", ");

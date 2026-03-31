@@ -12,14 +12,14 @@ fn uses_methods() {
     expected.register_site(
         ExpectedSite::new("Counter::new::ENTER")
             .register("initial", 0)
-            .register("unused_param", 1)
+            .register("unused_param", 1),
     );
     expected.register_site(
         ExpectedSite::new("Counter::new::EXIT")
             .register("initial", 0)
             .register("unused_param", 1)
             .register("RET.val", 0)
-            .register("RET.unused", 2)
+            .register("RET.unused", 2),
     );
 
     expected.register_site(

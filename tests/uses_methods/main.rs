@@ -7,7 +7,10 @@ struct Counter {
 
 impl Counter {
     fn new(initial: u32, unused_param: u32) -> Counter {
-        Counter { val: initial, unused: 0 }
+        Counter {
+            val: initial,
+            unused: 0,
+        }
     }
 
     fn add_1(&self, amount: u32, unused_param: u32) -> u32 {

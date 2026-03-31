@@ -7,7 +7,6 @@ fn main() {
     tree.insert("BBB", 20);
     tree.insert("CCC", 30);
 
-
     let a = tree.get(&"AAA").unwrap();
     let b = tree.get(&"BBB").unwrap();
     let c = tree.get(&"CCC").unwrap();

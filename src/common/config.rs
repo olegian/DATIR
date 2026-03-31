@@ -1,8 +1,8 @@
 /* This file defines the global configuration and logging setup used throughout DATIR
 */
 
-use std::path::Path;
 use std::io::Write;
+use std::path::Path;
 
 /// DATIR configuration, to provide easy access to some helpful debugging information.
 pub struct DatirConfig {
@@ -49,12 +49,16 @@ impl DatirConfig {
                 let mut log_file_path = dir.to_path_buf();
                 log_file_path.push(prefix);
 
-                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(log_file_path).unwrap();
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(log_file_path)
+                    .unwrap();
                 let _ = writeln!(file, "{}", message);
-            },
+            }
             None => {
                 println!("[{prefix}]: {message}");
-            },
+            }
         }
     }
 }

@@ -56,7 +56,8 @@ impl<'a> MutVisitor for TupleLiteralsVisitor<'a> {
             // back into a TaggedValue
             ast::ExprKind::Call(func, args) => {
                 if let ast::ExprKind::Path(_, _) = &func.kind {
-                    if let Some(is_tupleable) = self.first_pass.is_untracked_call_ret_tupleable(&func.span)
+                    if let Some(is_tupleable) =
+                        self.first_pass.is_untracked_call_ret_tupleable(&func.span)
                     {
                         for arg_expr in args.iter_mut() {
                             *arg_expr = self.untuple(arg_expr.clone());

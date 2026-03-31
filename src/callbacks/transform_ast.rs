@@ -7,12 +7,13 @@ use rustc_middle::ty::TyCtxt;
 use rustc_session::parse::ParseSess;
 
 use crate::{
-    common::DatirConfig, file_loaders::transforming_loader::{
-        FileType, Passes, TransformingFileLoader,
-    }, types::ati_info::FirstPassInfo, visitors::{
+    common::DatirConfig,
+    file_loaders::transforming_loader::{FileType, Passes, TransformingFileLoader},
+    types::ati_info::FirstPassInfo,
+    visitors::{
         TupleLiteralsVisitor, UpdateFnDeclsVisitor, add_crate_attribute, define_types_from_file,
         import_root_crate,
-    }
+    },
 };
 
 pub struct TransformAbstractSyntaxTreeCallbacks {
@@ -22,7 +23,10 @@ pub struct TransformAbstractSyntaxTreeCallbacks {
 
 impl TransformAbstractSyntaxTreeCallbacks {
     pub fn new(first_pass: FirstPassInfo, config: Arc<DatirConfig>) -> Self {
-        Self { first_pass: Arc::new(first_pass), config }
+        Self {
+            first_pass: Arc::new(first_pass),
+            config,
+        }
     }
 }
 
@@ -62,7 +66,7 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         // use custom file loader to run passes over AST before continuing compilation
         config.file_loader = Some(Box::new(TransformingFileLoader::new(
             passes,
-            self.config.clone()
+            self.config.clone(),
         )));
     }
 

@@ -87,7 +87,11 @@ pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap
         );
 
         let expected_site = expected_site.unwrap();
-        assert_eq!(expected_site.len(), site_ati_output.len(), "Expected site {site_name} has a different number of parameter mappings that observed");
+        assert_eq!(
+            expected_site.len(),
+            site_ati_output.len(),
+            "Expected site {site_name} has a different number of parameter mappings that observed"
+        );
 
         let mut expected_to_actual: HashMap<&usize, &usize> = HashMap::new();
         for (var, actual_id) in site_ati_output.iter() {
@@ -136,13 +140,21 @@ impl ExpectedSite {
         self
     }
 
-    pub fn register_array(mut self, name: &str, len: usize, elem_comparibility: usize, len_comparibility: usize) -> Self {
+    pub fn register_array(
+        mut self,
+        name: &str,
+        len: usize,
+        elem_comparibility: usize,
+        len_comparibility: usize,
+    ) -> Self {
         let name = String::from(name);
         for i in 0..len {
-            self.partition.insert(format!("{name}[{i}]"), elem_comparibility);
+            self.partition
+                .insert(format!("{name}[{i}]"), elem_comparibility);
         }
 
-        self.partition.insert(format!("{name}_LEN"), len_comparibility);
+        self.partition
+            .insert(format!("{name}_LEN"), len_comparibility);
         self
     }
 

@@ -7,7 +7,7 @@ use rustc_driver::Compilation;
 use rustc_interface::interface;
 use rustc_middle::ty::TyCtxt;
 
-use crate::{ types::ati_info::FirstPassInfo, visitors::define_types_from_file, };
+use crate::{types::ati_info::FirstPassInfo, visitors::define_types_from_file};
 
 /// Callbacks struct to be passed into the compiler invocation.
 /// Notably, this pass comes after some function type information was discovered

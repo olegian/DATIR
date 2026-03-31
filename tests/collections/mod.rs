@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::common::{ExpectedOutput, ExpectedSite, compile_and_execute, delete, verify};
 
-
 // FIXME: This test is currently unused, as it tests functionality
 // that should be fixed when the std lib is instrumented.
 fn collections() {

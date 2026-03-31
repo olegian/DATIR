@@ -16,7 +16,7 @@ fn uses_struct() {
             .register("s.x", 3)
             .register("s.y", 4)
             .register("s.z.x", 5)
-            .register("s.z.y", 6)
+            .register("s.z.y", 6),
     );
     expected.register_site(
         ExpectedSite::new("func::EXIT")
@@ -25,13 +25,10 @@ fn uses_struct() {
             .register("s.x", 0)
             .register("s.y", 0)
             .register("RET", 0)
-
             .register("z", 1)
-
             .register("z2", 2)
             .register("s.z.x", 2)
-
-            .register("s.z.y", 3)
+            .register("s.z.y", 3),
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("struct.out");

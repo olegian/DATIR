@@ -128,7 +128,6 @@ pub enum FileType {
     Untracked,
 }
 
-
 /// `module_path` is the Rust module path derived from the file being processed
 /// (e.g., `""` for root, `"dep"` for `dep.rs`).
 type Pass = Box<dyn Fn(&ParseSess, &mut ast::Crate, &FileType, &str) + Send + Sync>;
@@ -175,7 +174,10 @@ impl TransformingFileLoader {
         let output = self.ast_to_source(&krate);
 
         if self.config.print_transformed_source {
-            self.config.log("TransformedSource", &format!("======== {path:?} ========\n{output}\n"));
+            self.config.log(
+                "TransformedSource",
+                &format!("======== {path:?} ========\n{output}\n"),
+            );
         }
 
         output

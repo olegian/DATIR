@@ -15,7 +15,7 @@ use rustc_middle::ty::adjustment::{Adjust, PointerCoercion};
 use crate::types::ati_info::FirstPassInfo;
 
 /// Visitor that finds all invocations of untracked functions and locations
-/// where an array to slice coercion takes place. Updates self.first_pass 
+/// where an array to slice coercion takes place. Updates self.first_pass
 /// to include this information after running.
 pub struct AnalyzeHirVisitor<'tcx, 'a> {
     pub tcx: TyCtxt<'tcx>,
@@ -27,7 +27,7 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
 
     /// Combined with above NestedFilter, defines how the visitor
     /// is going to traverse the tree. This configuration will have
-    /// this visitor visit all nested expressions, as in we are doing 
+    /// this visitor visit all nested expressions, as in we are doing
     /// a "deep" traversal, visiting every single expression as opposed
     /// to doing a "shallow" traversal, visiting only the top-level exprs
     fn maybe_tcx(&mut self) -> Self::MaybeTyCtxt {
@@ -46,14 +46,14 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                     if let Res::Def(kind, def_id) = typeck.qpath_res(qpath, func.hir_id) {
                         // ... and we have type information for it ...
 
-                        // FIXME: I have low confidence in this, but for now this resolved a problem with 
+                        // FIXME: I have low confidence in this, but for now this resolved a problem with
                         // enum and struct tuple constructors which appear as function calls.
-                        // Given that we are currently ignoring the tracked/untracked boundary, 
+                        // Given that we are currently ignoring the tracked/untracked boundary,
                         // I think this is fine for now. Is there anything different about constructing these
                         // types as opposed to calling a function from the perspective of the ATI analysis?
                         let is_constructor = matches!(kind, rustc_hir::def::DefKind::Ctor(_, _));
                         if !is_constructor && !self.first_pass.is_fn_def_id_tracked(&def_id) {
-                            // ... and the function is untracked as self.first_pass never had 
+                            // ... and the function is untracked as self.first_pass never had
                             // the appropriate defid registered for it.
 
                             // this function call might need to have it's inputs
@@ -66,10 +66,11 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                     }
                 } else {
                     // TODO: could an instrumented call have a non-path kind?
+                    // yes? closures?
                 }
             }
 
-            // we are taking a reference to some sort of expression. This is potentially a location 
+            // we are taking a reference to some sort of expression. This is potentially a location
             // where an array to slice coercion is happening.
             hir::ExprKind::AddrOf(..) => {
                 let ldid = expr.hir_id.owner.def_id;

@@ -1,6 +1,9 @@
 #![allow(unused)]
 
-struct Point { x: u32, y: u32 }
+struct Point {
+    x: u32,
+    y: u32,
+}
 
 fn struct_hints(a: u32, b: u32, unused: u32) -> Point {
     let p: Point = Point { x: a, y: b };

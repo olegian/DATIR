@@ -20,7 +20,7 @@ fn type_hints() {
             .register("b", 1)
             .register("unused", 2)
             .register("RET.x", 0)
-            .register("RET.y", 1)
+            .register("RET.y", 1),
     );
 
     expected.register_site(
@@ -34,7 +34,7 @@ fn type_hints() {
             .register("a", 0)
             .register("b", 0)
             .register("unused", 2)
-            .register("RET", 0)
+            .register("RET", 0),
     );
 
     expected.register_site(
@@ -46,7 +46,7 @@ fn type_hints() {
         ExpectedSite::new("turbofish_hints::EXIT")
             .register("a", 0)
             .register("unused", 2)
-            .register("RET", 0)
+            .register("RET", 0),
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("type_hints.out");

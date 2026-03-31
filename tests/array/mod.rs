@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use crate::common::{ExpectedOutput, ExpectedSite, compile_and_execute, delete, verify};
@@ -14,7 +13,7 @@ fn array() {
             .register_array("arr", 3, 0, 1)
             .register("x", 2)
             .register("y", 3)
-            .register("unused", 4)
+            .register("unused", 4),
     );
     expected.register_site(
         ExpectedSite::new("foo::EXIT")
@@ -22,7 +21,7 @@ fn array() {
             .register("x", 0)
             .register("y", 0)
             .register("unused", 4)
-            .register("RET", 0)
+            .register("RET", 0),
     );
     expected.register_site(
         ExpectedSite::new("bar::ENTER")
@@ -37,7 +36,7 @@ fn array() {
             .register("unused", 2)
             .register("y", 1)
             .register("z", 1)
-            .register("RET", 0)
+            .register("RET", 0),
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("multi_file.out");

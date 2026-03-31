@@ -1,6 +1,6 @@
 /* Entry point file for DATIR.
  * This file creates and orchestrates the multiple compiler invocations
- * required to perform abstract type inference. The first compilation 
+ * required to perform abstract type inference. The first compilation
  * gathers necessary information about the source code (namely some type
  * information), which the second compilation uses to actually mutate the
  * AST and to add in dynamic instrumentation.
@@ -43,8 +43,9 @@ pub fn main() {
     rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
     let first_pass = gather_info.first_pass_info();
 
-    // config to expose some optional functionality, for instance printing the 
+    // config to expose some optional functionality, for instance printing the
     // instrumented source code, or outputing it to a file.
-    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
+    let mut cbs =
+        callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
     rustc_driver::run_compiler(&args, &mut cbs);
 }

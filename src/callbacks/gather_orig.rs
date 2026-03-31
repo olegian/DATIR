@@ -15,7 +15,7 @@ use crate::{common::DatirConfig, types::ati_info::FirstPassInfo, visitors::Analy
 pub struct GatherAtiInfo {
     /// contains the information discovered after executing the compilation.
     first_pass: FirstPassInfo,
-    config: Arc<DatirConfig>
+    config: Arc<DatirConfig>,
 }
 
 /// Constructor
@@ -73,8 +73,8 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
             }) = node
             {
                 // we found a regular function, named `ident`!
-                self.first_pass.observe_tracked_fn(&ident, local_def_id.to_def_id());
-
+                self.first_pass
+                    .observe_tracked_fn(&ident, local_def_id.to_def_id());
             } else if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
                 ident,
                 kind: rustc_hir::ImplItemKind::Fn(_, _),
@@ -82,7 +82,8 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
             }) = node
             {
                 // we found a method defined in some impl block!
-                self.first_pass.observe_tracked_fn(ident, local_def_id.to_def_id());
+                self.first_pass
+                    .observe_tracked_fn(ident, local_def_id.to_def_id());
             } else if let rustc_hir::Node::ImplItem(_) = node {
                 // non-Fn impl items (associated constants, types)
                 // FIXME: probably safe to ignore for now, but should be implemented soon
@@ -91,11 +92,13 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
                 // FIXME: probably safe to ignore for now, but should be implemented soon
             } else {
                 // FIXME: implement support for closures. Should closures be treated as full blown functions?
-                unimplemented!( "Found body owner that isn't a function while discovering ATI info: {node:#?}")
+                unimplemented!(
+                    "Found body owner that isn't a function while discovering ATI info: {node:#?}"
+                )
             }
         }
 
-        // at this point, self.first_pass has knowledge of every single function that 
+        // at this point, self.first_pass has knowledge of every single function that
         // requires instrumentation.
 
         // Use a visitor to:
@@ -116,7 +119,8 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
         // 2. all code locations where a funciton that is not instrumented is invoked
         // 3. all code locations where an array to slice coercion took place
         if self.config.print_first_pass_info {
-            self.config.log("FirstPassInfo", &format!("{:#?}", self.first_pass));
+            self.config
+                .log("FirstPassInfo", &format!("{:#?}", self.first_pass));
         }
 
         Compilation::Continue

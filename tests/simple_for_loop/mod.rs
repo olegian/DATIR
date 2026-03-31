@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use crate::common::{compile_and_execute, verify, delete};
+use crate::common::{compile_and_execute, delete, verify};
 
 // #[test]
 fn simple_for_loop() {

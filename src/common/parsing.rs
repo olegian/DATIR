@@ -52,14 +52,10 @@ pub fn parse_items(
     }
 
     res
-
 }
 /// Parses a string `contents` into a vector of ast::Items that can then be inserted into
 /// any crate.
-pub fn parse_expr(
-    psess: &ParseSess,
-    contents: String,
-) -> ast::Expr {
+pub fn parse_expr(psess: &ParseSess, contents: String) -> ast::Expr {
     let mut parser = create_parser(psess, contents, None);
 
     match parser.parse_expr() {
@@ -67,10 +63,9 @@ pub fn parse_expr(
         Err(diag) => {
             diag.emit();
             panic!("Unable to parse expression!")
-        },
+        }
     }
 }
-
 
 pub fn parse_single_unstable_compiler_attribute(
     psess: &ParseSess,
