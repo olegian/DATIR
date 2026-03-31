@@ -12,6 +12,9 @@ pub struct DatirConfig {
     pub print_transformed_source: bool,
     /// Whether or not to print the information gathered from the first pass
     pub print_first_pass_info: bool,
+    /// Whether or not to print the information regarding function signatures used to create
+    /// function stubs
+    pub print_function_signatures: bool,
 }
 
 impl DatirConfig {
@@ -28,6 +31,7 @@ impl DatirConfig {
             log_dir: Some(log_dir),
             print_transformed_source: true,
             print_first_pass_info: true,
+            print_function_signatures: true,
         }
     }
 
@@ -37,13 +41,14 @@ impl DatirConfig {
             log_dir: None,
             print_transformed_source: false,
             print_first_pass_info: false,
+            print_function_signatures: true,
         }
     }
 
     /// Logs the message, giving it a prefix to make it easier to identify.
     /// If self.log_dir is set, then the prefix becomes the name of the file which
     /// will be appended to.
-    pub fn log(&self, prefix: &'static str, message: &str) {
+    pub fn log(&self, prefix: &'static str, message: String) {
         match &self.log_dir {
             Some(dir) => {
                 let mut log_file_path = dir.to_path_buf();

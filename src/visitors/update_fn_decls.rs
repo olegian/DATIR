@@ -9,17 +9,16 @@ use rustc_span::{DUMMY_SP, Ident};
 
 use crate::common;
 use crate::common::CanBeTupled;
-use crate::types::ati_info::{FirstPassInfo, FunctionSignatures, ReceiverKind};
+use crate::types::ati_info::{FirstPassInfo, StubInfo, ReceiverKind};
 
-pub struct UpdateFnDeclsVisitor<'a> {
+pub struct UpdateTypesVisitor<'a> {
     first_pass: &'a FirstPassInfo,
-    fn_sigs: Option<FunctionSignatures>,
+    stub_info: StubInfo,
 }
 
-impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
-    /// Updates type annotations on `let` bindings so that primitives like `u32`
-    /// become `Tagged<u32>` in sync with the rest of the instrumentation.
-    // TODO: move this operation to Tuple Lits Visitor?
+impl<'a> MutVisitor for UpdateTypesVisitor<'a> {
+    /// Updates type annotations on `let` bindings so that primitives like `let x: u32`
+    /// become `let x: Tagged<u32>` in sync with the rest of the instrumentation.
     fn visit_local(&mut self, local: &mut ast::Local) {
         if let Some(ty) = &mut local.ty {
             self.recursively_tuple_type(ty);
@@ -27,9 +26,8 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
         mut_visit::walk_local(self, local);
     }
 
-    /// Updates turbofish generics in function/method calls so that, e.g.,
+    /// Updates turbofish generics in function/method calls, for example
     /// `f::<u32>(x)` becomes `f::<Tagged<u32>>(x)`.
-    // TODO: move this operation to Tuple Lits Visitor?
     fn visit_expr(&mut self, expr: &mut ast::Expr) {
         match &mut expr.kind {
             ast::ExprKind::Call(func, _) => {
@@ -47,9 +45,9 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
         mut_visit::walk_expr(self, expr);
     }
 
-    /// Converts all function signatures and top level type definitions (structs)
+    /// Converts all function signatures and top level type definitions (structs, enums)
     /// to thier tagged variants. Specifically modifies all parameter types to
-    /// be TaggedValues if necessary, alongside returns.
+    /// be Tagged<T>s if necessary, alongside returns types.
     fn visit_item(&mut self, item: &mut ast::Item) {
         match &mut item.kind {
             // Tags all input and return types that can be tupled in fn sigs
@@ -64,7 +62,7 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                     return;
                 }
 
-                // adds a TaggedValue<*> around all taggable types, recursively
+                // adds a Tagged<*> around all taggable types passed in as parameters, recursively
                 for param in &mut decl.inputs {
                     self.recursively_tuple_type(&mut param.ty);
                 }
@@ -75,25 +73,21 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                 if let ast::FnRetTy::Ty(return_type) = &mut decl.output {
                     // do the recursive wrapping to the return type if one exists
                     self.recursively_tuple_type(return_type);
-                    self.fn_sigs.as_mut().unwrap().register_fn_sig(
+                    self.stub_info.register_fn_sig(
                         &orig_ident,
                         decl.inputs.iter().collect(),
                         Some(return_type),
                     );
                 } else {
-                    self.fn_sigs.as_mut().unwrap().register_fn_sig(
+                    self.stub_info.register_fn_sig(
                         &orig_ident,
                         decl.inputs.iter().collect(),
                         None,
                     );
                 }
 
-                // rename the function so the stub can take its place
-                let unstubbed = self
-                    .fn_sigs
-                    .as_mut()
-                    .unwrap()
-                    .reserve_unstubbed_name(&orig_ident);
+                // rename the function so the soon-to-be-generated stub can take its place
+                let unstubbed = self.stub_info.reserve_unstubbed_name(&orig_ident);
                 *ident = Ident::from_str(&unstubbed);
 
                 // Walk the body to update type hints in let bindings and turbofish.
@@ -102,17 +96,16 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                 }
             }
 
-            // Tags all values in struct defs that can be tupled
-            // FIXME: generics????
+            // Tags all value types in struct defs that can be tupled
+            // FIXME: do generics work???? Untested.
             ast::ItemKind::Struct(ident, generics, ast::VariantData::Struct { fields, .. }) => {
                 for field_def in fields.iter_mut() {
                     self.recursively_tuple_type(&mut field_def.ty);
                 }
 
-                self.fn_sigs
-                    .as_mut()
-                    .unwrap()
-                    .register_struct_def(ident.as_str(), &fields[..]);
+                // structs will need to be bound to ATI sites, meaning we will
+                // generate an implementation to do that later on.
+                self.stub_info.register_struct_def(ident.as_str(), &fields[..]);
             }
 
             // Tags all values in enum variant fields that can be tupled
@@ -133,16 +126,12 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                         ast::VariantData::Unit(_) => {}
                     }
                 }
-                self.fn_sigs
-                    .as_mut()
-                    .unwrap()
-                    .register_enum_def(&enum_name, &variants[..]);
+                self.stub_info.register_enum_def(&enum_name, &variants[..]);
             }
 
             // Tags tracked methods in impl blocks and registers their signatures for stub creation.
             // Each tracked method is renamed to `method_unstubbed`; a matching stub
             // (retaining the original name) is generated later by `create_stub_items`.
-            // Generic impl blocks are not yet supported and are silently skipped.
             ast::ItemKind::Impl(ast::Impl {
                 generics,
                 self_ty,
@@ -150,13 +139,12 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                 ..
             }) => {
                 if !generics.params.is_empty() {
-                    // TODO: support generic impl blocks
-                    return;
+                    unimplemented!("Impl blocks that accept generics are not yet supported.")
                 }
 
                 let type_name = common::get_type_string(self_ty);
-
                 for assoc_item in items.iter_mut() {
+                    // only consider methods defined on this type for now.
                     let ast::AssocItemKind::Fn(box ast::Fn {
                         ident,
                         sig: ast::FnSig { decl, .. },
@@ -172,25 +160,28 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                     }
 
                     let method_name = ident.as_str().to_string();
-                    let receiver = UpdateFnDeclsVisitor::determine_receiver_kind(&decl.inputs);
+                    let receiver = Self::determine_receiver_kind(&decl.inputs);
 
                     // tag all non-self parameter types
                     for param in &mut decl.inputs {
-                        if !UpdateFnDeclsVisitor::is_self_param(param) {
+                        if !Self::is_self_param(param) {
                             self.recursively_tuple_type(&mut param.ty);
                         }
                     }
 
                     // collect non-self params for stub registration
+                    // FIXME: can probably just skip the first parameter? is it possible to take more than one &self???
                     let non_self_params: Vec<&ast::Param> = decl
                         .inputs
                         .iter()
-                        .filter(|p| !UpdateFnDeclsVisitor::is_self_param(p))
+                        .filter(|p| !Self::is_self_param(p))
                         .collect();
 
+                    // tuple return type, if necessary, then register a method sig that should be 
+                    // generated later.
                     if let ast::FnRetTy::Ty(ret_ty) = &mut decl.output {
                         self.recursively_tuple_type(ret_ty);
-                        self.fn_sigs.as_mut().unwrap().register_method_sig(
+                        self.stub_info.register_method_sig(
                             &type_name,
                             &method_name,
                             receiver,
@@ -198,7 +189,7 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                             Some(ret_ty),
                         );
                     } else {
-                        self.fn_sigs.as_mut().unwrap().register_method_sig(
+                        self.stub_info.register_method_sig(
                             &type_name,
                             &method_name,
                             receiver,
@@ -207,7 +198,7 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
                         );
                     }
 
-                    let unstubbed = self.fn_sigs.as_mut().unwrap().reserve_unstubbed_name_for(
+                    let unstubbed = self.stub_info.reserve_unstubbed_name_for(
                         &format!("{type_name}::{method_name}"),
                         &method_name,
                     );
@@ -225,32 +216,32 @@ impl<'a> MutVisitor for UpdateFnDeclsVisitor<'a> {
     }
 }
 
-impl<'a> UpdateFnDeclsVisitor<'a> {
+impl<'a> UpdateTypesVisitor<'a> {
     /// Constructor. `module_path` is used to qualify runtime site names.
     pub fn new(first_pass: &'a FirstPassInfo, module_path: &str) -> Self {
-        let mut fn_sigs = FunctionSignatures::default();
-        fn_sigs.set_module_path(module_path);
+        let stub_info = StubInfo::new(module_path);
         Self {
             first_pass,
-            fn_sigs: Some(fn_sigs),
+            stub_info: stub_info,
         }
     }
 
     /// Pre-scans the crate to collect all function and method identifiers.
     /// Must be called before `visit_crate` so that `_unstubbed` rename
     /// collision detection works.
+    // FIXME: it would be really nice to combine this with the first compilation step.
     pub fn collect_known_idents(&mut self, krate: &ast::Crate) {
-        let fn_sigs = self.fn_sigs.as_mut().unwrap();
         for item in &krate.items {
             match &item.kind {
                 ast::ItemKind::Fn(box ast::Fn { ident, .. }) => {
-                    fn_sigs.add_known_ident(ident.as_str());
+                    self.stub_info.add_known_local_ident(ident.as_str());
                 }
-                ast::ItemKind::Impl(ast::Impl { items, .. }) => {
+                ast::ItemKind::Impl(ast::Impl { items, self_ty, .. }) => {
                     for assoc_item in items {
                         if let ast::AssocItemKind::Fn(box ast::Fn { ident, .. }) = &assoc_item.kind
                         {
-                            fn_sigs.add_known_ident(ident.as_str());
+                            let self_str = common::get_type_string(self_ty);
+                            self.stub_info.add_known_local_ident(&format!("{self_str}::{}", ident.as_str()));
                         }
                     }
                 }
@@ -260,12 +251,12 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
     }
 
     /// Pulls out all information about function signatures that this visitor
-    /// modified. Panics if invoked before the pass is performed.
-    pub fn get_new_fn_signatures(&mut self) -> FunctionSignatures {
-        self.fn_sigs.take().expect("FnSigs was already taken!")
+    /// modified
+    pub fn get_fn_signatures(self) -> StubInfo {
+        self.stub_info
     }
 
-    /// Directly modifies a type T into a TaggedValue<T> in place,
+    /// Directly modifies a type T into a Tagged<T> in place,
     /// assumes that T is known to be tupleable.
     fn tuple_type(&self, old_type: &mut ast::Ty) {
         old_type.kind = ast::TyKind::Path(
@@ -289,8 +280,8 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         );
     }
 
+    /// Converts a &(mut?)[T] into a &(mut?)Tagged<&(mut?)[T]>
     fn tuple_slice(&self, slice_ty: &mut ast::Ty) {
-        // println!("{:#?}", slice_ty);
         let mut tagged_slice = ast::PathSegment::from_ident(Ident::from_str("Tagged"));
         tagged_slice.args = Some(Box::new(GenericArgs::AngleBracketed(
             ast::AngleBracketedArgs {
@@ -319,6 +310,8 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         slice_ty.kind = outer_ref.kind;
     }
 
+    /// Converts a [T; N] into a Tagged<[T; N]>
+    // FIXME: is this the same as tuple_type?
     fn tuple_array(&self, array_ty: &mut ast::Ty) {
         let mut tagged_array = ast::PathSegment::from_ident(Ident::from_str("Tagged"));
         tagged_array.args = Some(Box::new(GenericArgs::AngleBracketed(
@@ -341,8 +334,8 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
         );
     }
 
-    /// Applies `recursively_tuple_type` to all type generic arguments in a path segment,
-    /// handling turbofish annotations like `func::<u32>` → `func::<Tagged<u32>>`.
+    /// recursively tuples all type generic arguments in a path segment, which
+    /// handles all turbofish annotations like `func::<u32>` -> `func::<Tagged<u32>>`.
     fn tuple_generic_args_in_segment(&self, segment: &mut ast::PathSegment) {
         let Some(ref mut boxed_args) = segment.args else {
             return;
@@ -371,7 +364,7 @@ impl<'a> UpdateFnDeclsVisitor<'a> {
             return ReceiverKind::None;
         };
 
-        if !UpdateFnDeclsVisitor::is_self_param(first) {
+        if !Self::is_self_param(first) {
             return ReceiverKind::None;
         }
 

@@ -7,14 +7,14 @@
  * making calls to untracked functions.
  *
  * FirstPassInfo is then used to during the second compilation to only
- * instrument specific functions, during which FunctionSignatures is constructed.
- * FunctionSignatures is used to record the updated data types used in function
+ * instrument specific functions, during which StubInfo is constructed.
+ * StubInfo is used to record the updated data types used in function
  * inputs and outputs, as well as the function name and parameter names.
- * FunctionSignatures is then consumed by the stub creation process, to add in
+ * StubInfo is then consumed by the stub creation process, to add in
  * the correct stubs responsible for managing sites.
 */
 
-// TODO: This file is due for a refactor. FunctionBoudnaries / FunctionSignatures is doing too much.
+// TODO: This file is due for a refactor. FirstPassInfo / StubInfo is doing too much.
 
 use std::collections::{HashMap, HashSet};
 
@@ -120,7 +120,7 @@ impl FirstPassInfo {
 /// Each stub requires knowledge of the function name, param names + types, and the
 /// return type, all of which is encoded in the various maps below.
 #[derive(Debug)]
-pub struct FunctionSignatures {
+pub struct StubInfo {
     /// The module path for the file being processed (e.g., `""` for root, `"dep"` for dep.rs).
     /// Used to qualify runtime site names so they don't collide across modules.
     module_path: String,
@@ -145,10 +145,10 @@ pub struct FunctionSignatures {
     def_enums: HashMap<String, Vec<ast::Variant>>,
 }
 
-impl Default for FunctionSignatures {
-    fn default() -> Self {
+impl StubInfo {
+    pub fn new(module_path: &str) -> StubInfo {
         Self {
-            module_path: String::new(),
+            module_path: module_path.to_string(),
             fn_sigs: HashMap::new(),
             def_structs: HashMap::new(),
             def_enums: HashMap::new(),
@@ -156,22 +156,6 @@ impl Default for FunctionSignatures {
             rename_map: HashMap::new(),
             known_idents: HashSet::new(),
         }
-    }
-}
-
-impl FunctionSignatures {
-    /// Sets the module path used to qualify runtime site names
-    pub fn set_module_path(&mut self, module_path: &str) {
-        self.module_path = module_path.to_string();
-    }
-
-    /// Registers an identifier as known in this file so `_unstubbed`
-    /// rename collisions can be detected and avoided
-    // FIXME: I honestly think that random name-mangling is a more reasonable
-    // and simple appraoch, but this keeps the name somewhat readable and therefore
-    // easier to debug.
-    pub fn add_known_ident(&mut self, ident: &str) {
-        self.known_idents.insert(ident.to_string());
     }
 
     /// Returns the module-qualified site name for a function or method.
@@ -199,9 +183,12 @@ impl FunctionSignatures {
     /// and suffix generation (e.g., `"method"`).
     ///
     /// Returns the chosen local unstubbed name (e.g., "TypeName::method" -> "method_unstubbed").
+    // FIXME: I honestly think that random name-mangling is a more reasonable
+    // and simple appraoch, but this keeps the name somewhat readable and therefore
+    // easier to debug.
     pub fn reserve_unstubbed_name_for(&mut self, map_key: &str, local_name: &str) -> String {
         let mut candidate = format!("{local_name}_unstubbed");
-        // This is really stupid but should avoid all name collisions.
+        // This is a really simple solution that should avoid all name collisions.
         // Read above FIXME.
         let mut suffix = 0;
         while self.known_idents.contains(&candidate) {
@@ -211,6 +198,10 @@ impl FunctionSignatures {
         self.rename_map
             .insert(map_key.to_string(), candidate.clone());
         candidate
+    }
+
+    pub fn add_known_local_ident(&mut self, ident: &str) {
+        self.known_idents.insert(ident.to_string());
     }
 
     /// Looks up the unstubbed name that was assigned to the given map key.
@@ -339,7 +330,7 @@ impl FunctionSignatures {
             .map(|variant| {
                 let vname = variant.ident.as_str();
                 match &variant.data {
-                    // TODO: these are actually a little worrying. Enum variants themselves can be 
+                    // FIXME: these are actually a little worrying. Enum variants themselves can be 
                     // compared with one another, does that mean that we shuold put a tag around enum variants
                     // that corresponds to the enum variant's discriminant?
                     ast::VariantData::Unit(_) => {
@@ -552,6 +543,7 @@ impl FunctionSignatures {
     /// Builds site-bind statements for a slice of (already-tagged) parameters.
     /// Mirrors `create_site_binds` but accepts params directly rather than looking
     /// them up from `fn_sigs`.
+    // FIXME: can probably combine the two methods.
     fn create_site_binds_for_params(&self, site_name: &str, inputs: &[ast::Param]) -> Vec<String> {
         inputs
             .iter()
@@ -572,6 +564,7 @@ impl FunctionSignatures {
             .collect()
     }
 
+    /// Creates a stub for a function, which governs sites.
     fn create_fn_stub(&self, fn_name: &str) -> String {
         let (inputs, output) = self
             .fn_sigs
@@ -601,6 +594,7 @@ impl FunctionSignatures {
         )
     }
 
+    /// Extracts the name of an AST parameter, as a string
     fn get_param_name(&self, param: &ast::Param) -> String {
         match param.pat.kind {
             rustc_ast::PatKind::Ident(_, ident, _) => ident.as_str().to_string(),
@@ -610,6 +604,8 @@ impl FunctionSignatures {
         }
     }
 
+    /// Creates bind statements, that associates the parameters to a function
+    /// named fn_name, to a site named site_name
     fn create_site_binds(&self, site_name: &str, fn_name: &str) -> Vec<String> {
         let (inputs, _) = self.fn_sigs.get(fn_name).unwrap();
 
@@ -633,6 +629,8 @@ impl FunctionSignatures {
             .collect::<Vec<String>>()
     }
 
+    /// Creates a string representation of a function stub, with then given 
+    /// parameters.
     fn create_stub(
         &self,
         fn_name: &str,

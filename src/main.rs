@@ -34,17 +34,22 @@ mod visitors;
 
 /// Entry-point, forwards all command-line arguments to rustc_driver
 pub fn main() {
-    let args: Vec<_> = env::args().collect();
+    let mut args: Vec<_> = env::args().collect();
 
     // configure debug logging...
-    let config = Arc::new(DatirConfig::debug());
+    // FIXME: improve this, I should figure out a better way of passing flags and having the behavior appropriately change
+    // it's hard as there are multiple compile invocations, all of which could take different flags
+    let config = if args.ends_with(&["test_invocation".to_string()]) {
+        args.pop();
+        Arc::new(DatirConfig::release())
+    } else {
+        Arc::new(DatirConfig::debug())
+    };
 
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
     rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
     let first_pass = gather_info.first_pass_info();
 
-    // config to expose some optional functionality, for instance printing the
-    // instrumented source code, or outputing it to a file.
     let mut cbs =
         callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
     rustc_driver::run_compiler(&args, &mut cbs);

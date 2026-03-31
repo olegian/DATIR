@@ -176,7 +176,7 @@ impl TransformingFileLoader {
         if self.config.print_transformed_source {
             self.config.log(
                 "TransformedSource",
-                &format!("======== {path:?} ========\n{output}\n"),
+                format!("======== {path:?} ========\n{output}\n"),
             );
         }
 

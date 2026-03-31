@@ -22,17 +22,30 @@ fn multi_file() {
             .register("RET", 0),
     );
     expected.register_site(
-        ExpectedSite::new("dep::from_dep::ENTER")
+        ExpectedSite::new("dep::foo::ENTER")
             .register("x", 0)
             .register("y", 1)
             .register("z", 2),
     );
     expected.register_site(
-        ExpectedSite::new("dep::from_dep::EXIT")
+        ExpectedSite::new("dep::foo::EXIT")
             .register("x", 0)
             .register("y", 1)
             .register("z", 1)
             .register("RET", 1),
+    );
+    expected.register_site(
+        ExpectedSite::new("dep::foo_unstubbed::ENTER")
+            .register("x", 0)
+            .register("y", 1)
+            .register("z", 2),
+    );
+    expected.register_site(
+        ExpectedSite::new("dep::foo_unstubbed::EXIT")
+            .register("x", 0)
+            .register("y", 0)
+            .register("z", 1)
+            .register("RET", 0),
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("multi_file.out");

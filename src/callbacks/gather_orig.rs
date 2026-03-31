@@ -120,7 +120,7 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
         // 3. all code locations where an array to slice coercion took place
         if self.config.print_first_pass_info {
             self.config
-                .log("FirstPassInfo", &format!("{:#?}", self.first_pass));
+                .log("FirstPassInfo", format!("{:#?}", self.first_pass));
         }
 
         Compilation::Continue

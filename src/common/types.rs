@@ -8,7 +8,8 @@ use rustc_middle as mir;
 use rustc_span::sym;
 
 /// Determines whether a type is a tracked primitive that can be wrapped in `Tagged<T>`.
-/// Defines as a trait so that it can be shared between both MIR types and AST types
+/// Defines as a trait so that it can be shared between both MIR and AST types
+// IMPORTANT: THE BELOW IMPLS NEED TO BE KEPT IN SYNC.
 pub trait CanBeTupled {
     fn can_be_tupled(&self) -> bool;
 }
@@ -50,15 +51,16 @@ impl CanBeTupled for mir::ty::Ty<'_> {
     }
 }
 
-/// Determines whether or not the passed in literal can be converted
-/// into a TaggedValue. Modify the below list to enable/disable tupling literals.
-pub fn can_literal_be_tupled(lit: &Lit) -> bool {
-    match lit.kind {
-        LitKind::Integer | LitKind::Float | LitKind::Bool | LitKind::Char => true,
-        _ => false,
+impl CanBeTupled for Lit {
+    fn can_be_tupled(&self) -> bool {
+        match self.kind {
+            LitKind::Integer | LitKind::Float | LitKind::Bool | LitKind::Char => true,
+            _ => false,
+        }
     }
 }
 
+/// Removes references to get to the underlying type, as in `& &mut &T` is converted to `T`.
 // FIXME: this is equiv to Ty::peel_refs but just mutable rather than shared borrows
 // there has to be a better way!
 pub fn peel_refs(ty: &mut ast::Ty) -> &mut ast::Ty {
@@ -77,6 +79,8 @@ fn get_lifetime_string(lifetime: &ast::Lifetime) -> String {
     lifetime.ident.to_string()
 }
 
+/// Converts an AnonConst node into a string representation of the underlying literal.
+/// e.g. AnonConst(1234) -> "1234"
 fn get_anon_const_string(anon_const: &ast::AnonConst) -> String {
     let ast::AnonConst {
         value:
@@ -198,7 +202,6 @@ pub fn get_type_string(ty_path: &ast::Ty) -> String {
             let constant = symbol.as_str();
 
             let res = format!("[{inner}; {constant}]");
-            // panic!("{res:?}");
             res
         },
 
@@ -206,8 +209,7 @@ pub fn get_type_string(ty_path: &ast::Ty) -> String {
             value,
             ..
         }) => {
-            // panic!("Found array with non-literal size:\n{ty:#?}\n{value:#?}");
-            "[ARRAY]".into()
+            panic!("Found array with non-literal size:\n{ty:#?}\n{value:#?}");
         },
 
         // this should be impossible, for now error out
