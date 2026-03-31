@@ -1,14 +1,13 @@
-use std::sync::Arc;
-
 /* Before we can perform the required AST mutation, we need to gather
  * some type information about the original source code. This is done by
- * invoking the compiler once, passing in the callback struct defined in
- * this file TODO
+ * invoking the compiler and passing in the GatherAtiInfo callback struct
+ * defined in this file. See after_expansion below for more information.
 */
 use rustc_ast as ast;
 use rustc_driver::Compilation;
 use rustc_interface::interface;
 use rustc_middle::ty::TyCtxt;
+use std::sync::Arc;
 
 use crate::{common::DatirConfig, types::ati_info::FirstPassInfo, visitors::AnalyzeHirVisitor};
 
@@ -116,6 +115,9 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
         // 1. every single function that requires instrumentation to be added
         // 2. all code locations where a funciton that is not instrumented is invoked
         // 3. all code locations where an array to slice coercion took place
+        if self.config.print_first_pass_info {
+            self.config.log("FirstPassInfo", &format!("{:#?}", self.first_pass));
+        }
 
         Compilation::Continue
     }

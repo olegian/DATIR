@@ -37,16 +37,14 @@ pub fn main() {
     let args: Vec<_> = env::args().collect();
 
     // configure debug logging...
-    let logs = std::env::current_dir().unwrap();
-    let logs = logs.join("logs").into_boxed_path();
-    let config = Arc::new(DatirConfig::debug(Some(logs)));
+    let config = Arc::new(DatirConfig::debug());
 
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
     rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
-    let fbs = gather_info.first_pass_info();
+    let first_pass = gather_info.first_pass_info();
 
     // config to expose some optional functionality, for instance printing the 
     // instrumented source code, or outputing it to a file.
-    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(fbs, config);
+    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
     rustc_driver::run_compiler(&args, &mut cbs);
 }

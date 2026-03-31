@@ -10,20 +10,24 @@ pub struct DatirConfig {
     pub log_dir: Option<Box<Path>>,
     /// Whether or not to print out the modified source code after the second compiler invocation.
     pub print_transformed_source: bool,
+    /// Whether or not to print the information gathered from the first pass
+    pub print_first_pass_info: bool,
 }
 
 impl DatirConfig {
     /// Simple configuration intended to be used for debugging.
-    pub fn debug(log_dir: Option<Box<Path>>) -> Self {
+    pub fn debug() -> Self {
         // make sure log directory exists and is empty
-        if let Some(dir) = &log_dir {
-            let _ = std::fs::remove_dir_all(dir);
-            std::fs::create_dir_all(dir);
-        }
+        // FIXME: have the final executable also be created in this directory when using debug
+        let cwd = std::env::current_dir().unwrap();
+        let log_dir = cwd.join("logs").into_boxed_path();
+        let _ = std::fs::remove_dir_all(&log_dir);
+        let _ = std::fs::create_dir_all(&log_dir);
 
         Self {
-            log_dir,
-            print_transformed_source: true
+            log_dir: Some(log_dir),
+            print_transformed_source: true,
+            print_first_pass_info: true,
         }
     }
 
@@ -32,6 +36,7 @@ impl DatirConfig {
         Self {
             log_dir: None,
             print_transformed_source: false,
+            print_first_pass_info: false,
         }
     }
 
