@@ -59,7 +59,7 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
                 visitor.visit_crate(&mut krate);
 
                 // create all required function stubs, which perform site management
-                generate_stubs(&datir_config, krate, &first_pass, module_path, psess);
+                generate_stubs(&datir_config, krate, module_path, psess);
 
                 // make the ATI types available to dependancies
                 if matches!(ftype, FileType::Dep) {
@@ -75,8 +75,8 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         )));
     }
 
-    /// Define necessary types in the root file. All other files will
-    /// import these types from the root.
+    /// Define necessary types (namely Tagged<T>, but also globals like ATI_ANALYSIS) 
+    /// in the root file. All other files will import these types from the root.
     fn after_crate_root_parsing(
         &mut self,
         compiler: &interface::Compiler,

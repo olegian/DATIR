@@ -24,8 +24,9 @@ use std::{env, sync::Arc};
 
 use crate::common::DatirConfig;
 
-// included just for VsCode's rust-analyzer extension to run analysis on the runtime library
+// included so VsCode's rust-analyzer extension runs static analysis on the runtime library
 mod ati;
+
 mod callbacks;
 mod common;
 mod file_loaders;
@@ -48,7 +49,7 @@ pub fn main() {
 
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
     rustc_driver::run_compiler(&args, &mut gather_info); // panics on compilation failure
-    let first_pass = gather_info.first_pass_info();
+    let first_pass = gather_info.into_first_pass_info();
 
     let mut cbs =
         callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);

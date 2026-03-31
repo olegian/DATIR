@@ -119,7 +119,7 @@ pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap
 pub fn delete(exec: &Path) {
     match std::fs::remove_file(exec) {
         Ok(_) => {}
-        Err(_) => println!("Unable to remove old file."),
+        Err(_) => println!("Unable to remove old file, skipping old output deletion."),
     }
 }
 

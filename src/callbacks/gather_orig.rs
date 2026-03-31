@@ -1,7 +1,23 @@
 /* Before we can perform the required AST mutation, we need to gather
  * some type information about the original source code. This is done by
  * invoking the compiler and passing in the GatherAtiInfo callback struct
- * defined in this file. See after_expansion below for more information.
+ * defined in this file. See after_expansion below for more specific information.
+ * 
+ * In summary, this callback struct collects:
+ * 1. All code locations where an array is coerced to a slice. These are places
+ *    where DATIR will need to include an extra runtime library invocation to convert
+ *    between a Tagged<[T; N]> to a &Tagged<&[T]> (optionally mutable references).
+ * 2. Fully qualified identifiers of all functions and methods that are instrumented.
+ * 3. Using (2), find all places where a non-instrumented function is called. 
+ *    DATIR will need this information to correctly handle the tracked/
+ *    untracked function boundary, correctly passing tagged values into functions
+ *    that only accept untagged values, and tupling back the return.
+ * 
+ * REMAINING WORK:
+ * (2) is not actually producing qualified names. The semantics of the tracked/untracked
+ * boundary is poorly defined, I'm not sure how to tuple the return value. If the return value
+ * is a struct, tupling that struct should tuple all fields, but that requires defining a 
+ * different struct with the correct Tagged types!
 */
 use rustc_ast as ast;
 use rustc_driver::Compilation;
@@ -18,8 +34,8 @@ pub struct GatherAtiInfo {
     config: Arc<DatirConfig>,
 }
 
-/// Constructor
 impl GatherAtiInfo {
+    /// Constructor
     pub fn new(config: Arc<DatirConfig>) -> Self {
         Self {
             first_pass: Default::default(),
@@ -28,7 +44,7 @@ impl GatherAtiInfo {
     }
 
     /// pulls out all gathered info that this compiler invocation learned.
-    pub fn first_pass_info(self) -> FirstPassInfo {
+    pub fn into_first_pass_info(self) -> FirstPassInfo {
         self.first_pass
     }
 }
@@ -64,6 +80,10 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
         // Iterates over all code blocks that can be invoked. This includes
         // regular functions, methods defined in impl blocks, closures, and
         // anon constants. All body owners receive a unique DefId and BodyId.
+        // FIXME: This whole system needs a rework. Finding the "tracked boundary"
+        // requires iterating through the entire crate (most likely file-by-file to be
+        // able to differentiate where functions are defined), alongside namespace resolution
+        // to differentiate TypeOne::foo from TypeTwo::foo. Is that all?
         for local_def_id in tcx.hir_body_owners() {
             let node = tcx.hir_node_by_def_id(local_def_id);
 

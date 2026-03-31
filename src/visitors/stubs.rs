@@ -5,6 +5,7 @@
  * any AST nodes.
 */
 use rustc_ast::{self as ast};
+use rustc_ast_pretty::pprust;
 use rustc_session::parse::ParseSess;
 use rustc_span::Ident;
 
@@ -31,19 +32,17 @@ pub enum ReceiverKind {
     RefMut,
 }
 
-/// Walks the crate, renames tracked functions/methods to proper stub names,
+/// Walks the crate, renames instrumented functions/methods to have "stub" names,
 /// generates all stub code, and inserts the parsed stubs into the crate
 pub fn generate_stubs(
     datir_config: &DatirConfig,
     krate: &mut ast::Crate,
-    first_pass: &FirstPassInfo,
     module_path: &str,
     psess: &ParseSess,
 ) {
-    let known_names: KnownNames = find_all_names(krate, first_pass);
-
     // iterate through krate items once to find all
     // fn/method names ahead of time, to later avoid collisions.
+    let known_names: KnownNames = find_all_names(krate);
     if datir_config.print_function_signatures {
         datir_config.log("FunctionStubs", format!("Known Funcs in File {module_path}:\n{:#?}\n", known_names));
     }
@@ -56,10 +55,6 @@ pub fn generate_stubs(
                 sig: ast::FnSig { decl, .. },
                 ..
             }) => {
-                if !first_pass.is_fn_ident_tracked(ident) {
-                    continue;
-                }
-
                 let orig_name = ident.as_str().to_string();
                 let new_name = get_unique_inner_name(None, &orig_name, &known_names);
                 if datir_config.print_function_signatures {
@@ -88,7 +83,7 @@ pub fn generate_stubs(
             ast::ItemKind::Impl(ast::Impl {
                 self_ty, items, ..
             }) => {
-                let type_name = common::get_type_string(self_ty);
+                let type_name = pprust::ty_to_string(self_ty);
                 // separate method stubs vec to only construct a single
                 // impl which contains all of the new stub functions
                 let mut method_stubs: Vec<String> = Vec::new();
@@ -102,10 +97,6 @@ pub fn generate_stubs(
                     else {
                         continue;
                     };
-
-                    if !first_pass.is_fn_ident_tracked(ident) {
-                        continue;
-                    }
 
                     let orig_name = ident.as_str().to_string();
                     let new_name = get_unique_inner_name(Some(&type_name), &orig_name, &known_names);
@@ -147,7 +138,7 @@ pub fn generate_stubs(
 ////////////////// Helpers ///////////////////////////
 
 /// Finds the names of all functions that require stubs
-fn find_all_names(krate: &ast::Crate, first_pass: &FirstPassInfo) -> KnownNames {
+fn find_all_names(krate: &ast::Crate) -> KnownNames {
     let mut known_names: KnownNames = HashMap::new();
 
     for item in krate.items.iter() {
@@ -156,10 +147,6 @@ fn find_all_names(krate: &ast::Crate, first_pass: &FirstPassInfo) -> KnownNames 
                 ident,
                 ..
             }) => {
-                if !first_pass.is_fn_ident_tracked(ident) {
-                    continue;
-                }
-
                 known_names.entry(REGULAR_FUNCTION_NAMESPACE.to_string()).or_default().insert(ident.as_str().to_string());
             }
 
@@ -175,11 +162,8 @@ fn find_all_names(krate: &ast::Crate, first_pass: &FirstPassInfo) -> KnownNames 
                         continue;
                     };
 
-                    if !first_pass.is_fn_ident_tracked(ident) {
-                        continue;
-                    }
 
-                    let self_ty = common::get_type_string(self_ty);
+                    let self_ty = pprust::ty_to_string(self_ty);
                     known_names.entry(self_ty).or_default().insert(ident.as_str().to_string());
                 }
             }
@@ -283,7 +267,7 @@ fn create_fn_stub(
         .iter()
         .map(|param| {
             let name = get_param_name(param);
-            let ptype = common::get_type_string(&param.ty);
+            let ptype = pprust::ty_to_string(&param.ty);
             (format!("{name}: {ptype}"), name.to_string())
         })
         .unzip();
@@ -315,7 +299,7 @@ fn create_fn_stub(
 
     match output {
         ast::FnRetTy::Ty(ret_ty) => {
-            let ret = common::get_type_string(ret_ty);
+            let ret = pprust::ty_to_string(ret_ty);
             format!(
                 r#"
                 pub fn {fn_name}({declared}) -> {ret} {{
@@ -393,7 +377,7 @@ fn create_method_stub(
     let (other_declared, other_passed): (Vec<String>, Vec<String>) = non_self_inputs.clone()
         .map(|param| {
             let name = get_param_name(param);
-            let ptype = common::get_type_string(&param.ty);
+            let ptype = pprust::ty_to_string(&param.ty);
             (format!("{name}: {ptype}"), name.to_string())
         })
         .unzip();
@@ -438,7 +422,7 @@ fn create_method_stub(
 
     match output {
         ast::FnRetTy::Ty(ret_ty) => {
-            let ret = common::get_type_string(ret_ty);
+            let ret = pprust::ty_to_string(ret_ty);
             format!(
                 r#"
                 pub fn {method_name}({declared_params}) -> {ret} {{

@@ -65,7 +65,6 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
     }
 
     /// Performs expression instrumentation (literals, binary ops, calls, etc.)
-    /// and updates turbofish generics in function/method calls.
     fn visit_expr(&mut self, expr: &mut ast::Expr) {
         mut_visit::walk_expr(self, expr);
 
@@ -120,29 +119,28 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             }
 
             // Update turbofish generics on method calls
+            // at some point this should include more tracked/untracked boundary logic
             ast::ExprKind::MethodCall(box ast::MethodCall { seg, .. }) => {
                 self.tuple_generic_args_in_segment(seg);
             }
 
             // Transform binary ops to include ATI_ANALYSIS calls to merge tags.
             ast::ExprKind::Binary(op, lhs, rhs) => {
-                let op_node = op.node;
-                let lhs_clone = lhs.as_ref().clone();
-                let rhs_clone = rhs.as_ref().clone();
-                *expr = self.transform_binary_op(&lhs_clone, op_node, &rhs_clone);
+                *expr = self.transform_binary_op(&lhs, op.node, &rhs);
             }
 
             // Transform compound assignment ops (+=, -=, etc.)
             ast::ExprKind::AssignOp(op, lhs, rhs) => {
-                let op_node = op.node.into();
-                let lhs_clone = lhs.as_ref().clone();
-                let rhs_clone = rhs.as_ref().clone();
-                *expr = self.transform_assign_op(&lhs_clone, op_node, &rhs_clone);
+                *expr = self.transform_assign_op(&lhs, op.node.into(), &rhs);
             }
 
             // After Binary transformation, comparison conditions produce Tagged<bool>.
             // Unwrap to raw bool so the if/while condition compiles.
-            ast::ExprKind::If(cond, _, _) | ast::ExprKind::While(cond, _, _) => {
+            ast::ExprKind::If(cond, body, maybe_else) => {
+                *cond = self.untuple(cond.clone());
+            },
+
+            ast::ExprKind::While(cond, body, _) => {
                 *cond = self.untuple(cond.clone());
             }
 
@@ -216,10 +214,6 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 items,
                 ..
             }) => {
-                if !generics.params.is_empty() {
-                    unimplemented!("Impl blocks that accept generics are not yet supported.")
-                }
-
                 for assoc_item in items.iter_mut() {
                     let ast::AssocItemKind::Fn(box ast::Fn {
                         ident,
@@ -337,7 +331,7 @@ impl<'a> TransformVisitor<'a> {
                 )
             }
             OpKind::Comparison => {
-                unreachable!("compound-assignment operators cannot be comparison operators")
+                unreachable!("assignment-operators cannot be comparisons")
             }
         };
 
