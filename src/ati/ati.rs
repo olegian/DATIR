@@ -81,9 +81,7 @@ impl Site {
 
                     let new_tag_leader = value_uf.find(new_tag).unwrap();
                     self.type_uf.introduce_tag(new_tag_leader);
-                    let tmp = self.type_uf.union_tags(&new_tag_leader, &prev_leader).unwrap();
-
-                    self.var_tags.insert(var.clone(), tmp);
+                    *prev_leader = self.type_uf.union_tags(&new_tag_leader, &prev_leader).unwrap();
                 },
 
                 // this is the first time we are observing this variable at this site.
@@ -105,32 +103,14 @@ impl Site {
                 },
             }
         }
-
-        // for (new_var, new_var_tag) in &self.observed_var_tags {
-        //     let new_leader_tag = value_uf.find(new_var_tag).unwrap(); // ? is this unwrap safe? 
-        //     let new_leader_tag = self.type_uf.introduce_tag(new_leader_tag);
-
-        //     if let Some(old_tag) = self.var_tags.get(new_var) {
-        //         let old_leader_tag = value_uf.find(old_tag).unwrap();
-
-        //         let merged = self
-        //             .type_uf
-        //             .union_tags(&old_leader_tag, &new_leader_tag)
-        //             .unwrap();
-        //         self.var_tags.insert(new_var.clone(), merged);
-        //     } else {
-        //         self.var_tags.insert(new_var.clone(), new_leader_tag);
-        //     }
-        // }
-
-        // self.observed_var_tags.clear(); // done merging these vars in!
     }
 
     /// Produces ATI output, called at the end of main.
-    pub fn report(&self) {
+    pub fn report(&mut self) {
         println!("{}", self.name);
         for (var, tag) in self.var_tags.iter() {
-            println!("{var}:{tag:?}");
+            let leader = self.type_uf.find(tag).unwrap();
+            println!("{var}:{leader:?}");
         }
         println!("---");
     }
@@ -197,9 +177,9 @@ impl Sites {
     }
 
     /// Output results for all analyzed sites.
-    pub fn report(&self) {
+    pub fn report(&mut self) {
         println!("===ATI-ANALYSIS-START===");
-        for (_, site) in self.locs.iter() {
+        for (_, site) in self.locs.iter_mut() {
             site.report();
         }
     }
@@ -272,11 +252,20 @@ impl UnionFind {
     }
 
     /// Finds the parent index of the set at index `x` of self.parent
-    fn find_index(&mut self, x: usize) -> usize {
-        if self.parent[x] != x {
-            self.parent[x] = self.find_index(self.parent[x]);
+    fn find_index(&mut self, mut x: usize) -> usize {
+        let mut root = x;
+        while self.parent[root] != root {
+            root = self.parent[root];
         }
-        self.parent[x]
+
+        // path compression
+        while self.parent[x] != root {
+            let next = self.parent[x];
+            self.parent[x] = root;
+            x = next;
+        }
+
+        root
     }
 
     /// Associates the indecies `x` and `y` together, putting them
@@ -350,7 +339,6 @@ impl ATI {
     /// Update abstract types at this site, then store it back
     /// into the map. Call whenever you are done registering variables to a site.
     pub fn update_site(&mut self, mut site: Site) {
-        println!("UPDATING SITE: {}", site.name);
         site.update(&mut self.value_uf);
         self.sites.stash(site);
     }
@@ -370,7 +358,7 @@ impl ATI {
     }
 
     /// Produce output partition that defines abstract types.
-    pub fn report(&self) {
+    pub fn report(&mut self) {
         self.sites.report();
     }
 }

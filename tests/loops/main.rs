@@ -10,8 +10,8 @@ fn main() {
     let b = if_expr(2,  1, 2, 3, 4);
     println!("b={b}");
 
-    // while_expr(5, 0, 99);
-    // loop_expr(5, 0, 99);
+    while_expr(5, 0, 99);
+    loop_expr(5, 0, 99);
 }
 
 fn if_expr(branch: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
@@ -36,7 +36,7 @@ fn while_expr(iters: usize, mut a: usize, unused: u32) {
 fn loop_expr(iters: usize, mut a: usize, unused: u32) {
     let mut i: usize = 0;
     loop {
-        if i < iters {
+        if i >= iters {
             break;
         }
 
