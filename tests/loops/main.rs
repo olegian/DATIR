@@ -1,14 +1,11 @@
 #![allow(unused)]
 
-/// todo: more interesting control flow structures, try out ranges / iterators / whatever
 #[ignore]
 fn main() {
     // will merge together a, b
     let a = if_expr(20, 1, 2, 3, 4);
-    println!("a={a}");
     // will merge together a, d
     let b = if_expr(2,  1, 2, 3, 4);
-    println!("b={b}");
 
     while_expr(5, 0, 99);
     loop_expr(5, 0, 99);
