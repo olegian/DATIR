@@ -1,5 +1,5 @@
 /* Defines all types used to perform dynamic ATI. Every type in this file
- * is also defined in the instrumented code by `types.rs`.
+ * is also defined in the instrumented code by `define_types.rs`.
  *
  * Key points include:
  * 1. `struct ATI` - A single global instance of this struct exists in the program
@@ -7,14 +7,15 @@
  *    UnionFind (tracking all value interaction, globally) alongside the actual
  *    abstract type partition at each site. All interactions with ATI instrumentation
  *    are done by calling methods associated with this struct.
- * 2. `struct TaggedValue<T>` - a tuple of (T, Id), which implements all necessary
- *    operators on T to record interactions within the value_uf, when they happen.
- * 3. `struct Site` - A program point, created in stubs, which stores the abstract
+ * 2. `struct Site` - A program point, created in stubs, which stores the abstract
  *    types of variables registered to it.
- * 4. `struct Sites` - Maintains a collection of program points, all the sites in the
+ * 3. `struct Sites` - Maintains a collection of program points, all the sites in the
  *    instrumented file.
- * 5. `struct UnionFind` - A simple union find data structure, with some classic rank
+ * 4. `struct UnionFind` - A simple union find data structure, with some classic rank
  *    optimization.
+ * 5. `trait BindToSite` - A trait which simplifies how values are associated with specific
+ *    sites within each function stub. This trait uses an unstable feature called specialization
+ *    to allow for more complicated dispatch patterns, based off the "most similar" type.
 */
 
 use crate::ati::tagged::{Id, Tagged, Tagger};
@@ -46,15 +47,7 @@ impl Site {
     }
 
     /// Records that a particular `tv: Tagged<T>` was bound to a variable
-    /// named `var_name`.
-    ///
-    /// Intended for use whenever a let binding occurs. Essentially, abusing
-    /// some notation, 1 gets converted to 2. Can also be used to record parameters
-    /// or return values, as long as it's properly formatted.
-    /// ```
-    /// 1. let x = 10;
-    /// 2. let x = site.bind("x", Tagged<10>)
-    /// ```
+    /// named `var_name` at this site.
     pub fn bind(&mut self, var_name: &str, id: Id) {
         self.observed_var_tags.insert(var_name.into(), id);
     }
@@ -116,20 +109,28 @@ impl Site {
     }
 }
 
+/// The BindToSite trait is defined for all type T, and allows
+/// for all data types to be observed at a particular site. The
+/// `T.bind()` function is called within function stubs.
 pub trait BindToSite {
     fn bind(&self, site: &mut Site, var_name: &str);
 }
 
+/// Most generic implementation used by all non-tagged types.
 impl<T> BindToSite for T {
     default fn bind(&self, site: &mut Site, var_name: &str) {}
 }
 
+/// Most generic implementation used by all tagged types.
 impl<T> BindToSite for Tagged<T> {
     default fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(var_name, self.0);
     }
 }
 
+/// More specific implementation, used when binding arrays.
+/// This has every element of the array be represented within the site,
+/// alongside the length of the array.
 impl<T, const N: usize> BindToSite for Tagged<[T; N]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
@@ -140,6 +141,7 @@ impl<T, const N: usize> BindToSite for Tagged<[T; N]> {
     }
 }
 
+/// Similar to BindToSite for Tagged<[T; N]>, but for slices instead!
 impl<T> BindToSite for Tagged<&[T]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
@@ -155,6 +157,7 @@ pub struct Sites {
     locs: std::collections::BTreeMap<String, Site>,
 }
 impl Sites {
+    /// Constructor
     pub fn new() -> Self {
         Sites {
             locs: std::collections::BTreeMap::new(),
