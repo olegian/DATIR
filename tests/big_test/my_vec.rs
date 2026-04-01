@@ -1,3 +1,5 @@
+/// This is an AI-generated minimal implementation of a Vec, that
+/// I was curious to see if DATIR could instrument.
 use std::alloc::{self, Layout};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
