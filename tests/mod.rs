@@ -18,6 +18,7 @@ mod uses_struct;
 mod all_binary_operators;
 mod all_assign_operators;
 mod generic_struct;
+mod unary_operators;
 
 // FIXME: It's kind of annoying that `cargo test` ends up showing this
 // file in the output, but I honestly didn't like any of the quick solutions

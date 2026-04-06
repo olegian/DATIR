@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 /// This is specifically a string that is an invalid name for a struct or enum.
 const REGULAR_FUNCTION_NAMESPACE: &'static str = "-REGULAR-";
 
-/// Map of a namespace (the type of Self, or REGULAR_FUNCTION_NAMESPACE) to 
+/// Map of a namespace (the type of `Self`, or `REGULAR_FUNCTION_NAMESPACE`) to 
 /// a set of all methods/functions defined in that namespace.
 type KnownNames = HashMap<String, HashSet<String>>;
 

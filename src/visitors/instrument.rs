@@ -22,7 +22,7 @@
  * Indexing via Ranges is unverified.
 */
 use rustc_ast::mut_visit::{self, MutVisitor};
-use rustc_ast::{self as ast, BinOpKind, GenericArgs, DUMMY_NODE_ID};
+use rustc_ast::{self as ast, BinOpKind, DUMMY_NODE_ID, GenericArgs, UnOp};
 use rustc_ast_pretty::pprust;
 use rustc_session::parse::ParseSess;
 use rustc_span::{DUMMY_SP, Ident};
@@ -74,6 +74,11 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 if lit.can_be_tupled() {
                     *expr = self.tuplify_expr(expr);
                 }
+            }
+
+            // Assigning to a tagged value should consider the tags as being in the same AT
+            ast::ExprKind::Assign(lhs, rhs, _) => {
+                *expr = self.transform_assign(&lhs, &rhs);
             }
 
             // If this AddrOf operation was found to be a coercion between an array to an unsized slice
@@ -134,6 +139,35 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 *expr = self.transform_assign_op(&lhs, op.node.into(), &rhs);
             }
 
+            // Push Unary ops - and ! down, but leave * untouched.
+            ast::ExprKind::Unary(operator, operand) => {
+                if !matches!(operator, ast::UnOp::Deref) {
+                    *expr = self.transform_unary_op(&operator, &operand);
+                }
+            }
+
+            // Transform similar to function transformation, tagging input / output types
+            ast::ExprKind::Closure(box ast::Closure {
+                binder,
+                capture_clause,
+                constness,
+                coroutine_kind,
+                movability,
+                fn_decl,
+                body,
+                fn_decl_span,
+                fn_arg_span,
+            }) => {
+                // fn_decl.inputs.clone()
+                for input in fn_decl.inputs.iter_mut() {
+                    self.recursively_tuple_type(&mut input.ty)
+                }
+
+                if let ast::FnRetTy::Ty(ty) = &mut fn_decl.output {
+                    self.recursively_tuple_type(ty);
+                }
+            }
+
             // After Binary transformation, comparison conditions produce Tagged<bool>.
             // Unwrap to raw bool so the if/while condition compiles.
             ast::ExprKind::If(cond, body, maybe_else) => {
@@ -147,6 +181,17 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             ast::ExprKind::Index(receiver_expr, index_expr, _) => {
                 *receiver_expr = self.untuple(receiver_expr.clone());
                 *index_expr = self.untuple(index_expr.clone());
+            }
+
+            ast::ExprKind::Range(lo, hi, limits) => {
+                // lo.map(|lo| *lo = *self.untuple(lo));
+                lo.as_mut().map(|lo|  {
+                    *lo = self.untuple(lo.clone());
+                });
+
+                hi.as_mut().map(|hi|  {
+                    *hi = self.untuple(hi.clone());
+                });
             }
 
             _ => {}
@@ -254,14 +299,31 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
 }
 
 impl<'a> TransformVisitor<'a> {
+    /// Consutrctor
     pub fn new(first_pass: &'a FirstPassInfo, psess: &'a ParseSess) -> Self {
         Self { first_pass, psess }
     }
 
     ///////////////// Expression Instrumentation Helpers //////////////////////
+    
+    /// Transforms lhs = rhs into a block which merges together the tags of the lhs and rhs expression
+    /// and then does the actual assignment.
+    fn transform_assign(&self, lhs: &ast::Expr, rhs: &ast::Expr) -> ast::Expr {
+        let lhs_str = pprust::expr_to_string(lhs);
+        let rhs_str = pprust::expr_to_string(rhs);
 
-    /// Transforms `lhs op rhs` (where both operands are Tagged<T>) into a block that
-    /// explicitly calls ATI_ANALYSIS to record the interaction and constructs the result.
+        let assign_expr = format!("{lhs_str} = {{
+            let __ati_lhs = {lhs_str};
+            let __ati_rhs = {rhs_str};
+            ATI_ANALYSIS.lock().unwrap().union_and_get_id(&__ati_lhs.0, &__ati_rhs.0);
+            __ati_rhs
+        }}");
+
+        common::parse_expr(self.psess, assign_expr)
+    }
+
+    /// Transforms `lhs op rhs` (where we expect both operands are Tagged<T>s) into a block that
+    /// explicitly calls ATI_ANALYSIS functions to record the interaction and constructs the result.
     fn transform_binary_op(&self, lhs: &ast::Expr, op: BinOpKind, rhs: &ast::Expr) -> ast::Expr {
         let lhs_str = pprust::expr_to_string(lhs);
         let rhs_str = pprust::expr_to_string(rhs);
@@ -334,6 +396,19 @@ impl<'a> TransformVisitor<'a> {
                 unreachable!("assignment-operators cannot be comparisons")
             }
         };
+
+        common::parse_expr(self.psess, block_str)
+    }
+
+    fn transform_unary_op(&self, operator: &UnOp, operand: &ast::Expr) -> ast::Expr {
+        let operand_str = pprust::expr_to_string(operand);
+        let op_str = operator.as_str();
+        let block_str = format!(
+            r#"{{
+                let __ati_tag = {operand_str}.0;
+                Tagged(__ati_tag, {op_str}({operand_str}.1))
+            }}"#
+        );
 
         common::parse_expr(self.psess, block_str)
     }
@@ -615,15 +690,19 @@ impl<'a> TransformVisitor<'a> {
             }) => {
                 for generic in generic_params {
                     match &mut generic.kind {
-                        rustc_ast::GenericParamKind::Type { default } => {
-                            if let Some(ty) = default {
-                                self.recursively_tuple_type(ty);
-                            }
-                        }
-                        rustc_ast::GenericParamKind::Const { ty, .. } => {
+                        rustc_ast::GenericParamKind::Const { ty, default, .. } => {
                             self.recursively_tuple_type(ty);
+                            // FIXME: handle the default value. An AnonConst isn't computed
+                            // at runtime though, so how are we associating an Id with it?
                         }
-                        rustc_ast::GenericParamKind::Lifetime => {}
+                        _ => {}
+                        // Pretty certain we want to leave generics alone
+                        // rustc_ast::GenericParamKind::Type { default } => {
+                        //     if let Some(ty) = default {
+                        //         self.recursively_tuple_type(ty);
+                        //     }
+                        // }
+                        // rustc_ast::GenericParamKind::Lifetime => {}
                     }
                 }
 

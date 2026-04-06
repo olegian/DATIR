@@ -128,6 +128,18 @@ impl<T> BindToSite for Tagged<T> {
     }
 }
 
+impl<T> BindToSite for &Tagged<T> {
+    default fn bind(&self, site: &mut Site, var_name: &str) {
+        site.bind(var_name, self.0);
+    }
+}
+
+impl<T> BindToSite for &mut Tagged<T> {
+    default fn bind(&self, site: &mut Site, var_name: &str) {
+        site.bind(var_name, self.0);
+    }
+}
+
 /// More specific implementation, used when binding arrays.
 /// This has every element of the array be represented within the site,
 /// alongside the length of the array.
