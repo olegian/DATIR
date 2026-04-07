@@ -33,6 +33,7 @@ pub struct FirstPassInfo {
 
     /// places where a track_slice needs to be inserted, as a coercion from an array to a slice type occurred
     array_to_slice_locs: HashSet<Span>,
+    index_by_range_locs: HashSet<Span>,
 
     /// places where a non-tracked function is called
     /// mapped to whether the return type at that call site is tupleable (i.e. a tracked primitive).
@@ -47,8 +48,10 @@ impl Default for FirstPassInfo {
         Self {
             tracked_fn_def_ids: Default::default(),
             tracked_fn_idents: Default::default(),
-            array_to_slice_locs: Default::default(),
             untracked_fn_calls: Default::default(),
+
+            array_to_slice_locs: Default::default(),
+            index_by_range_locs: Default::default(),
         }
     }
 }
@@ -76,6 +79,10 @@ impl FirstPassInfo {
         self.array_to_slice_locs.insert(loc);
     }
 
+    pub fn observe_index_by_range(&mut self, loc: Span) {
+        self.index_by_range_locs.insert(loc);
+    }
+
     /// returns true if this identifier represent a tracked function
     pub fn is_fn_ident_tracked(&self, ident: &Ident) -> bool {
         self.tracked_fn_idents.contains(ident)
@@ -94,5 +101,9 @@ impl FirstPassInfo {
 
     pub fn is_span_ref_type_coercion(&self, location: &Span) -> bool {
         self.array_to_slice_locs.contains(location)
+    }
+
+    pub fn is_span_index_by_range(&self, location: &Span) -> bool {
+        self.index_by_range_locs.contains(location)
     }
 }

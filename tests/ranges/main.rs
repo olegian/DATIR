@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 #[ignore]
 fn main() {
     let a1 = [1; 10];

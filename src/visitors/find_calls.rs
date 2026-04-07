@@ -89,7 +89,10 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
             hir::ExprKind::Index(recv, idx, _) => {
                 let ldid = expr.hir_id.owner.def_id;
                 let typeck = self.tcx.typeck(ldid);
-                println!("FOUND: {:?}", typeck.expr_ty(idx));
+                let idx_ty = typeck.expr_ty(idx);
+                if !idx_ty.is_numeric() {
+                    self.first_pass.observe_index_by_range(expr.span);
+                }
             }
             _ => {}
         }

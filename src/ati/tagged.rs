@@ -6,7 +6,7 @@
  * type sets.
 */
 
-use crate::ati::ati::Site;
+use crate::ati::ati::{ATI_ANALYSIS, Site};
 
 /// type alias for Ids for ease of use, and to be able to quickly swap this out
 /// (although I doubt we'll need to).
@@ -161,6 +161,70 @@ impl<T> BindToSite for &mut Tagged<&mut [T]> {
         }
     }
 }
+
+trait TrackedAdd<T> {
+    fn tracked_add(self, rhs: Self) -> Self;
+}
+
+impl<T> TrackedAdd<T> for T where T: std::ops::Add<Output=T> {
+    fn tracked_add(self, rhs: T) -> T {
+        self + rhs
+    }
+}
+
+impl<T> TrackedAdd<T> for Tagged<T> where T: std::ops::Add<Output=T> {
+    fn tracked_add(self, rhs: Tagged<T>) -> Tagged<T> {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 + rhs.1)
+    }
+}
+
+trait TrackedEq<T> {
+    fn tracked_eq(&self, rhs: &Self) -> bool;
+}
+
+impl<T> TrackedEq<T> for T where T: std::cmp::PartialEq {
+    fn tracked_eq(&self, rhs: &T) -> bool {
+        self == rhs
+    }
+}
+
+impl<T> TrackedEq<T> for Tagged<T> where T: std::cmp::PartialEq {
+    fn tracked_eq(&self, rhs: &Tagged<T>) -> bool {
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        self.1 == rhs.1
+    }
+}
+
+trait TrackedLe<T> {
+    fn tracked_le(&self, rhs: &Self) -> bool;
+}
+
+impl<T> TrackedLe<T> for T where T: std::cmp::PartialOrd {
+    fn tracked_le(&self, rhs: &T) -> bool {
+        self <= rhs
+    }
+}
+
+impl<T> TrackedLe<T> for Tagged<T> where T: std::cmp::PartialOrd {
+    fn tracked_le(&self, rhs: &Tagged<T>) -> bool {
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        self.1 <= rhs.1
+    }
+}
+
+// impl<T> TrackedEq<T> for T where T: std::ops::Add<Output=T> {
+//     default fn tracked_add(self, rhs: T) -> T {
+//         self + rhs
+//     }
+// }
+
+// impl<T> TrackedAdd<T> for Tagged<T> where T: std::ops::Add<Output=T> {
+//     fn tracked_add(self, rhs: Tagged<T>) -> Tagged<T> {
+//         let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+//         Tagged(merged, self.1 + rhs.1)
+//     }
+// }
 
 // impl<T> std::cmp::PartialEq for Tagged<T>
 // where

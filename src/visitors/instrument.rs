@@ -179,8 +179,13 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             }
 
             ast::ExprKind::Index(receiver_expr, index_expr, _) => {
-                *receiver_expr = self.untuple(receiver_expr.clone());
-                *index_expr = self.untuple(index_expr.clone());
+                if self.first_pass.is_span_index_by_range(&expr.span) {
+                    // index_expr is some range, how should we treat ranges???
+
+                } else {
+                    *receiver_expr = self.untuple(receiver_expr.clone());
+                    *index_expr = self.untuple(index_expr.clone());
+                }
             }
 
             ast::ExprKind::Range(lo, hi, limits) => {
@@ -327,6 +332,33 @@ impl<'a> TransformVisitor<'a> {
         let lhs_str = pprust::expr_to_string(lhs);
         let rhs_str = pprust::expr_to_string(rhs);
         let op_str = op.as_str();
+        match op {
+            BinOpKind::Eq => {
+                let s = format!(
+                    r#"{{
+                        let __ati_lhs = {lhs_str};
+                        let __ati_rhs = {rhs_str};
+                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
+                        Tagged(__ati_id, __ati_lhs.tracked_eq(&__ati_rhs))
+                    }}"#
+                );
+
+                return common::parse_expr(self.psess, s);
+            },
+            BinOpKind::Le => {
+                let s = format!(
+                    r#"{{
+                        let __ati_lhs = {lhs_str};
+                        let __ati_rhs = {rhs_str};
+                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
+                        Tagged(__ati_id, __ati_lhs.tracked_le(&__ati_rhs))
+                    }}"#
+                );
+
+                return common::parse_expr(self.psess, s);
+            },
+            _ => {},
+        }
 
         let block_str = match Self::op_type(op) {
             OpKind::Comparison => {
