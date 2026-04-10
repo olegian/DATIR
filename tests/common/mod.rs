@@ -102,7 +102,7 @@ pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap
             if let Some(prev_actual_id) = expected_to_actual.get(expected_id) {
                 assert_eq!(
                     **prev_actual_id, *actual_id,
-                    "Var {var} was found in a wrong set"
+                    "Var {var} was found in a wrong set at site {site_name}"
                 );
             } else {
                 expected_to_actual.insert(expected_id, actual_id);

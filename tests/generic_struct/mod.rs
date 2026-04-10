@@ -33,6 +33,24 @@ fn generic_struct() {
             .register("self.val", 0)
             .register("self.unused", 1)
             .register("val", 2)
+            .register("RET", 1)
+    );
+
+    expected.register_site(
+        ExpectedSite::new("foo::ENTER")
+            .register("a.val", 0)
+            .register("a.unused", 1)
+            .register("b", 2)
+            .register("unused", 3)
+    );
+    expected.register_site(
+        ExpectedSite::new("foo::EXIT")
+            .register("a.val", 0)
+            .register("a.unused", 1)
+            .register("b", 2)
+            .register("unused", 3)
+            .register("RET.val", 0)
+            .register("RET.unused", 1)
     );
 
 

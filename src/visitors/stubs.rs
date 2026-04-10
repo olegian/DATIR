@@ -57,6 +57,7 @@ pub fn generate_stubs(
             // we found a free function!
             ast::ItemKind::Fn(box ast::Fn {
                 ident,
+                generics,
                 sig: ast::FnSig { decl, .. },
                 ..
             }) => {
@@ -74,6 +75,7 @@ pub fn generate_stubs(
                     &new_name,
                     &decl.inputs,
                     &decl.output,
+                    generics,
                 ));
 
                 // rename the original function to the inner name
@@ -81,24 +83,28 @@ pub fn generate_stubs(
             }
 
             // we found a struct definition
-            ast::ItemKind::Struct(ident, _, ast::VariantData::Struct { fields, .. }) => {
-                // structs, when passed between function boundaries need to be bind-ed to 
+            ast::ItemKind::Struct(ident, generics, ast::VariantData::Struct { fields, .. }) => {
+                // structs, when passed between function boundaries need to be bind-ed to
                 // sites. This requires implementing the BindToSite trait on them, defined
                 // in the runtime library.
-                stub_code.push(create_struct_bind_impl(ident.as_str(), fields));
+                stub_code.push(create_struct_bind_impl(ident.as_str(), fields, generics));
             }
 
             // we found an enum definition
-            ast::ItemKind::Enum(ident, _, ast::EnumDef { variants }) => {
+            ast::ItemKind::Enum(ident, generics, ast::EnumDef { variants }) => {
                 // similar to structs, enums require the BindToSite trait to be impled as well
-                stub_code.push(create_enum_bind_impl(ident.as_str(), variants));
+                stub_code.push(create_enum_bind_impl(ident.as_str(), variants, generics));
             }
 
             // we found an impl block, defining methods on some type `self_ty`
             ast::ItemKind::Impl(ast::Impl {
+                generics: impl_generics,
                 self_ty, items, ..
             }) => {
                 let type_name = pprust::ty_to_string(self_ty);
+                let bare_type_name = bare_type_name(self_ty).unwrap_or_else(|| type_name.clone());
+                let impl_generic_params = generic_params_to_string(impl_generics);
+                let impl_where_clause = where_clause_to_string(impl_generics);
 
                 // separate method stubs vec to only construct a single
                 // impl which contains all of the new stub functions
@@ -110,6 +116,7 @@ pub fn generate_stubs(
                 for assoc_item in items.iter_mut() {
                     let ast::AssocItemKind::Fn(box ast::Fn {
                         ident,
+                        generics: method_generics,
                         sig: ast::FnSig { decl, .. },
                         ..
                     }) = &mut assoc_item.kind
@@ -125,11 +132,12 @@ pub fn generate_stubs(
 
                     method_stubs.push(create_method_stub(
                         module_path,
-                        &type_name,
+                        &bare_type_name,
                         &orig_name,
                         &new_name,
                         &decl.inputs,
                         &decl.output,
+                        method_generics,
                     ));
 
                     *ident = Ident::from_str(&new_name);
@@ -137,7 +145,7 @@ pub fn generate_stubs(
 
                 if !method_stubs.is_empty() {
                     stub_code.push(format!(
-                        "impl {type_name} {{\n{}\n}}",
+                        "impl{impl_generic_params} {type_name}{impl_where_clause} {{\n{}\n}}",
                         method_stubs.join("\n\n")
                     ));
                 }
@@ -156,6 +164,103 @@ pub fn generate_stubs(
 }
 
 ////////////////// Helpers ///////////////////////////
+
+/// Extracts the bare name (without generic args) from a type that is a path,
+/// using the last segment's identifier (e.g., `MyStruct<A, B>` -> `MyStruct`).
+fn bare_type_name(ty: &ast::Ty) -> Option<String> {
+    let ast::TyKind::Path(_, path) = &ty.kind else {
+        return None;
+    };
+    Some(path.segments.last()?.ident.as_str().to_string())
+}
+
+/// Converts the generic params to a string like `<T, U: Clone, 'a>`.
+/// Returns an empty string if there are no generic params.
+fn generic_params_to_string(generics: &ast::Generics) -> String {
+    if generics.params.is_empty() {
+        return String::new();
+    }
+
+    let params: Vec<String> = generics.params.iter().map(|param| {
+        match &param.kind {
+            ast::GenericParamKind::Lifetime => {
+                let name = format!("'{}", param.ident.as_str());
+                if param.bounds.is_empty() {
+                    name
+                } else {
+                    format!("{}: {}", name, pprust::bounds_to_string(&param.bounds))
+                }
+            }
+            ast::GenericParamKind::Type { default } => {
+                let mut s = param.ident.as_str().to_string();
+                if !param.bounds.is_empty() {
+                    s.push_str(&format!(": {}", pprust::bounds_to_string(&param.bounds)));
+                }
+                if let Some(ty) = default {
+                    s.push_str(&format!(" = {}", pprust::ty_to_string(ty)));
+                }
+                s
+            }
+            ast::GenericParamKind::Const { ty, default, .. } => {
+                let mut s = format!("const {}: {}", param.ident.as_str(), pprust::ty_to_string(ty));
+                if let Some(d) = default {
+                    s.push_str(&format!(" = {}", pprust::expr_to_string(&d.value)));
+                }
+                s
+            }
+        }
+    }).collect();
+
+    format!("<{}>", params.join(", "))
+}
+
+/// Converts the generic params to a string like `<T, U, 'a>` containing only
+/// the names of each parameter (no bounds or defaults). Returns an empty
+/// string if there are no generic params.
+fn generic_args_to_string(generics: &ast::Generics) -> String {
+    if generics.params.is_empty() {
+        return String::new();
+    }
+
+    let args: Vec<String> = generics.params.iter().map(|param| {
+        match &param.kind {
+            ast::GenericParamKind::Lifetime => format!("'{}", param.ident.as_str()),
+            ast::GenericParamKind::Type { .. } => param.ident.as_str().to_string(),
+            ast::GenericParamKind::Const { .. } => param.ident.as_str().to_string(),
+        }
+    }).collect();
+
+    format!("<{}>", args.join(", "))
+}
+
+/// Converts a where clause to a string like ` where T: Clone, U: Send`.
+/// Returns an empty string if the where clause is empty.
+fn where_clause_to_string(generics: &ast::Generics) -> String {
+    if generics.where_clause.predicates.is_empty() {
+        return String::new();
+    }
+
+    let preds: Vec<String> = generics.where_clause.predicates.iter().map(|pred| {
+        match &pred.kind {
+            ast::WherePredicateKind::BoundPredicate(bp) => {
+                pprust::where_bound_predicate_to_string(bp)
+            }
+            ast::WherePredicateKind::RegionPredicate(rp) => {
+                let lifetime = format!("'{}", rp.lifetime.ident.as_str());
+                if rp.bounds.is_empty() {
+                    lifetime
+                } else {
+                    format!("{}: {}", lifetime, pprust::bounds_to_string(&rp.bounds))
+                }
+            }
+            ast::WherePredicateKind::EqPredicate(ep) => {
+                unreachable!("Found unsupported EqPredicate in where clause")
+            }
+        }
+    }).collect();
+
+    format!(" where {}", preds.join(", "))
+}
 
 /// Finds the names of all functions that require stubs
 fn find_all_names(krate: &ast::Crate) -> KnownNames {
@@ -297,8 +402,11 @@ fn create_fn_stub(
     inner_name: &str,
     inputs: &[ast::Param],
     output: &ast::FnRetTy,
+    generics: &ast::Generics,
 ) -> String {
     let site_name = qualified_site_name(module_path, fn_name);
+    let generic_params = generic_params_to_string(generics);
+    let where_clause = where_clause_to_string(generics);
 
     let (declared_params, passed_params): (Vec<String>, Vec<String>) = inputs
         .iter()
@@ -339,7 +447,7 @@ fn create_fn_stub(
             let ret = pprust::ty_to_string(ret_ty);
             format!(
                 r#"
-                pub fn {fn_name}({declared}) -> {ret} {{
+                pub fn {fn_name}{generic_params}({declared}) -> {ret}{where_clause} {{
                     let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}::ENTER");
                     {enter_binds}
                     ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
@@ -362,7 +470,7 @@ fn create_fn_stub(
         ast::FnRetTy::Default(_) => {
             format!(
                 r#"
-                pub fn {fn_name}({declared}) {{
+                pub fn {fn_name}{generic_params}({declared}){where_clause} {{
                     let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}::ENTER");
                     {enter_binds}
                     ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
@@ -391,8 +499,11 @@ fn create_method_stub(
     inner_name: &str,
     all_inputs: &[ast::Param],
     output: &ast::FnRetTy,
+    generics: &ast::Generics,
 ) -> String {
     let qualified_name = qualified_site_name(module_path, &format!("{type_name}::{method_name}"));
+    let generic_params = generic_params_to_string(generics);
+    let where_clause = where_clause_to_string(generics);
 
     let receiver = determine_receiver_kind(all_inputs);
 
@@ -464,7 +575,7 @@ fn create_method_stub(
             let ret = pprust::ty_to_string(ret_ty);
             format!(
                 r#"
-                pub fn {method_name}({declared_params}) -> {ret} {{
+                pub fn {method_name}{generic_params}({declared_params}) -> {ret}{where_clause} {{
                     let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}::ENTER");
                     {enter_binds}
                     ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
@@ -487,7 +598,7 @@ fn create_method_stub(
         ast::FnRetTy::Default(_) => {
             format!(
                 r#"
-                pub fn {method_name}({declared_params}) {{
+                pub fn {method_name}{generic_params}({declared_params}){where_clause} {{
                     let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}::ENTER");
                     {enter_binds}
                     ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
@@ -512,7 +623,11 @@ fn create_method_stub(
 /// This allows calling struct.bind(site) to recursively associated all fields of the
 /// struct with the passed in site. Stub functions rely on this to add all relevant 
 /// values to sites.
-fn create_struct_bind_impl(struct_name: &str, fields: &[ast::FieldDef]) -> String {
+fn create_struct_bind_impl(
+    struct_name: &str,
+    fields: &[ast::FieldDef],
+    generics: &ast::Generics,
+) -> String {
     let bind_calls = fields
         .iter()
         .filter_map(|field| {
@@ -524,14 +639,18 @@ fn create_struct_bind_impl(struct_name: &str, fields: &[ast::FieldDef]) -> Strin
         .collect::<Vec<_>>()
         .join("\n");
 
+    let generic_params = generic_params_to_string(generics);
+    let generic_args = generic_args_to_string(generics);
+    let where_clause = where_clause_to_string(generics);
+
     format!(
         r#"
-        impl BindToSite for {struct_name} {{
+        impl{generic_params} BindToSite for {struct_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 {bind_calls}
             }}
         }}
-        impl BindToSite for &{struct_name} {{
+        impl{generic_params} BindToSite for &{struct_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 (**self).bind(site, var_name);
             }}
@@ -541,7 +660,11 @@ fn create_struct_bind_impl(struct_name: &str, fields: &[ast::FieldDef]) -> Strin
 }
 
 /// Implements the BindToSite trait on some Enum. See comment for `create_struct_bind_impl`.
-fn create_enum_bind_impl(enum_name: &str, variants: &[ast::Variant]) -> String {
+fn create_enum_bind_impl(
+    enum_name: &str,
+    variants: &[ast::Variant],
+    generics: &ast::Generics,
+) -> String {
     let arms: Vec<String> = variants
         .iter()
         .map(|variant| {
@@ -589,16 +712,20 @@ fn create_enum_bind_impl(enum_name: &str, variants: &[ast::Variant]) -> String {
 
     let arms_str = arms.join("\n");
 
+    let generic_params = generic_params_to_string(generics);
+    let generic_args = generic_args_to_string(generics);
+    let where_clause = where_clause_to_string(generics);
+
     format!(
         r#"
-        impl BindToSite for {enum_name} {{
+        impl{generic_params} BindToSite for {enum_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 match self {{
                     {arms_str}
                 }}
             }}
         }}
-        impl BindToSite for &{enum_name} {{
+        impl{generic_params} BindToSite for &{enum_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 (**self).bind(site, var_name);
             }}

@@ -32,15 +32,9 @@ use crate::types::ati_info::FirstPassInfo;
 
 /// Enumerates the different types of operations that can be observed.
 enum OpKind {
-    /// ==, >, <=, etc..., these operations should result in the input tags being
-    /// merged, but the produced boolean needs to be in it's own set.
+    Logical,
     Comparison,
-    /// +, -, %, etc..., these operations should result in the input tags being
-    /// merged alongside with the output.
     Arithmetic,
-    /// Bitwise operators should result in nothing being merged, the output
-    /// should be in it's own set.
-    Bitwise,
 }
 
 pub struct TransformVisitor<'a> {
@@ -134,29 +128,10 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 *expr = self.transform_binary_op(&lhs, op.node, &rhs);
             }
 
-            // Transform compound assignment ops (+=, -=, etc.)
-            ast::ExprKind::AssignOp(op, lhs, rhs) => {
-                *expr = self.transform_assign_op(&lhs, op.node.into(), &rhs);
-            }
-
-            // Push Unary ops - and ! down, but leave * untouched.
-            ast::ExprKind::Unary(operator, operand) => {
-                if !matches!(operator, ast::UnOp::Deref) {
-                    *expr = self.transform_unary_op(&operator, &operand);
-                }
-            }
-
             // Transform similar to function transformation, tagging input / output types
             ast::ExprKind::Closure(box ast::Closure {
-                binder,
-                capture_clause,
-                constness,
-                coroutine_kind,
-                movability,
                 fn_decl,
-                body,
-                fn_decl_span,
-                fn_arg_span,
+                ..
             }) => {
                 // fn_decl.inputs.clone()
                 for input in fn_decl.inputs.iter_mut() {
@@ -170,11 +145,11 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
 
             // After Binary transformation, comparison conditions produce Tagged<bool>.
             // Unwrap to raw bool so the if/while condition compiles.
-            ast::ExprKind::If(cond, body, maybe_else) => {
+            ast::ExprKind::If(cond, _, _) => {
                 *cond = self.untuple(cond.clone());
             },
 
-            ast::ExprKind::While(cond, body, _) => {
+            ast::ExprKind::While(cond, _, _) => {
                 *cond = self.untuple(cond.clone());
             }
 
@@ -188,7 +163,7 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 }
             }
 
-            ast::ExprKind::Range(lo, hi, limits) => {
+            ast::ExprKind::Range(lo, hi, _) => {
                 lo.as_mut().map(|lo|  {
                     *lo = self.untuple(lo.clone());
                 });
@@ -258,8 +233,6 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             }
 
             ast::ItemKind::Impl(ast::Impl {
-                generics,
-                self_ty: _,
                 items,
                 ..
             }) => {
@@ -332,47 +305,20 @@ impl<'a> TransformVisitor<'a> {
         let lhs_str = pprust::expr_to_string(lhs);
         let rhs_str = pprust::expr_to_string(rhs);
         let op_str = op.as_str();
-        match op {
-            BinOpKind::Eq => {
-                let s = format!(
-                    r#"{{
-                        let __ati_lhs = {lhs_str};
-                        let __ati_rhs = {rhs_str};
-                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                        Tagged(__ati_id, __ati_lhs.tracked_eq(&__ati_rhs))
-                    }}"#
-                );
 
-                return common::parse_expr(self.psess, s);
-            },
-            BinOpKind::Le => {
-                let s = format!(
-                    r#"{{
-                        let __ati_lhs = {lhs_str};
-                        let __ati_rhs = {rhs_str};
-                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                        Tagged(__ati_id, __ati_lhs.tracked_le(&__ati_rhs))
-                    }}"#
-                );
-
-                return common::parse_expr(self.psess, s);
-            },
-            _ => {},
-        }
-
+        // FIXME: Kind of stupid to go from lhs op rhs to lhs op rhs in arithemtic case
         let block_str = match Self::op_type(op) {
             OpKind::Comparison => {
+                // guaranteed that lhs op rhs will return a regular bool
                 format!(
                     r#"{{
-                        let __ati_lhs = {lhs_str};
-                        let __ati_rhs = {rhs_str};
-                        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&__ati_lhs.0, &__ati_rhs.0);
                         let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                        Tagged(__ati_id, __ati_lhs.1 {op_str} __ati_rhs.1)
+                        Tagged(__ati_id, {lhs_str} {op_str} {rhs_str})
                     }}"#
                 )
             }
-            OpKind::Arithmetic => {
+            OpKind::Logical => {
+                // guaranteed that lhs and rhs were bools, and are now Tagged<bool>s
                 format!(
                     r#"{{
                         let __ati_lhs = {lhs_str};
@@ -382,64 +328,15 @@ impl<'a> TransformVisitor<'a> {
                     }}"#
                 )
             }
-            OpKind::Bitwise => {
-                format!(
-                    r#"{{
-                        let __ati_lhs = {lhs_str};
-                        let __ati_rhs = {rhs_str};
-                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                        Tagged(__ati_id, __ati_lhs.1 {op_str} __ati_rhs.1)
-                    }}"#
-                )
-            }
-        };
-
-        common::parse_expr(self.psess, block_str)
-    }
-
-    /// Transforms `lhs op= rhs` into a block that records the interaction and
-    /// writes the result back to the LHS place expression.
-    fn transform_assign_op(&self, lhs: &ast::Expr, op: BinOpKind, rhs: &ast::Expr) -> ast::Expr {
-        let lhs_str = pprust::expr_to_string(lhs);
-        let rhs_str = pprust::expr_to_string(rhs);
-        let op_str = op.as_str();
-
-        let block_str = match Self::op_type(op) {
             OpKind::Arithmetic => {
+                // handled by op impls on Tagged<T>
                 format!(
                     r#"{{
-                        let __ati_rhs = {rhs_str};
-                        let __ati_id = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&{lhs_str}.0, &__ati_rhs.0);
-                        {lhs_str} = Tagged(__ati_id, {lhs_str}.1 {op_str} __ati_rhs.1);
+                        {lhs_str} {op_str} {rhs_str}
                     }}"#
                 )
-            }
-            OpKind::Bitwise => {
-                format!(
-                    r#"{{
-                        let __ati_rhs = {rhs_str};
-                        let __ati_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                        {lhs_str} = Tagged(__ati_id, {lhs_str}.1 {op_str} __ati_rhs.1);
-                    }}"#
-                )
-            }
-            OpKind::Comparison => {
-                unreachable!("assignment-operators cannot be comparisons")
             }
         };
-
-        common::parse_expr(self.psess, block_str)
-    }
-
-    fn transform_unary_op(&self, operator: &UnOp, operand: &ast::Expr) -> ast::Expr {
-        let operand_str = pprust::expr_to_string(operand);
-        let op_str = operator.as_str();
-        let block_str = format!(
-            r#"{{
-                let __ati_tag = {operand_str}.0;
-                Tagged(__ati_tag, {op_str}({operand_str}.1))
-            }}"#
-        );
 
         common::parse_expr(self.psess, block_str)
     }
@@ -454,19 +351,20 @@ impl<'a> TransformVisitor<'a> {
             | BinOpKind::Le
             | BinOpKind::Ge => OpKind::Comparison,
 
-            BinOpKind::Add
-            | BinOpKind::Sub
-            | BinOpKind::Mul
-            | BinOpKind::Div
-            | BinOpKind::Rem
-            | BinOpKind::And
-            | BinOpKind::Or => OpKind::Arithmetic,
-
-            BinOpKind::BitXor
+            | BinOpKind::BitXor
             | BinOpKind::BitAnd
             | BinOpKind::BitOr
             | BinOpKind::Shl
-            | BinOpKind::Shr => OpKind::Bitwise,
+            | BinOpKind::Shr
+            | BinOpKind::Add
+            | BinOpKind::Sub
+            | BinOpKind::Mul
+            | BinOpKind::Div
+            | BinOpKind::Rem => OpKind::Arithmetic,
+
+            BinOpKind::And
+            | BinOpKind::Or => OpKind::Logical,
+
         }
     }
 

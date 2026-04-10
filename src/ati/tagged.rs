@@ -162,130 +162,282 @@ impl<T> BindToSite for &mut Tagged<&mut [T]> {
     }
 }
 
-trait TrackedAdd<T> {
-    fn tracked_add(self, rhs: Self) -> Self;
-}
-
-impl<T> TrackedAdd<T> for T where T: std::ops::Add<Output=T> {
-    fn tracked_add(self, rhs: T) -> T {
-        self + rhs
+impl<T> std::cmp::PartialEq for Tagged<T> where T: std::cmp::PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        // why not merge in here?
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &other.0);
+        self.1 == other.1
     }
 }
 
-impl<T> TrackedAdd<T> for Tagged<T> where T: std::ops::Add<Output=T> {
-    fn tracked_add(self, rhs: Tagged<T>) -> Tagged<T> {
+impl<T> std::cmp::PartialOrd for Tagged<T> where T: std::cmp::PartialOrd {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &other.0);
+        self.1.partial_cmp(&other.1)
+    }
+}
+
+impl<T> std::ops::Add for Tagged<T> where T: std::ops::Add<Output=T> {
+    type Output = Tagged<T>;
+
+    fn add(self, rhs: Self) -> Self::Output {
         let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
         Tagged(merged, self.1 + rhs.1)
     }
 }
 
-trait TrackedEq<T> {
-    fn tracked_eq(&self, rhs: &Self) -> bool;
-}
+impl<T: Copy> std::ops::Add<&Tagged<T>> for Tagged<T> where T: std::ops::Add<Output=T> {
+    type Output = Tagged<T>;
 
-impl<T> TrackedEq<T> for T where T: std::cmp::PartialEq {
-    fn tracked_eq(&self, rhs: &T) -> bool {
-        self == rhs
+    fn add(self, rhs: &Tagged<T>) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 + rhs.1)
     }
 }
 
-impl<T> TrackedEq<T> for Tagged<T> where T: std::cmp::PartialEq {
-    fn tracked_eq(&self, rhs: &Tagged<T>) -> bool {
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
-        self.1 == rhs.1
+impl<T> std::ops::Sub for Tagged<T> where T: std::ops::Sub<Output=T> {
+    type Output = Tagged<T>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 - rhs.1)
     }
 }
 
-trait TrackedLe<T> {
-    fn tracked_le(&self, rhs: &Self) -> bool;
-}
+impl<T: Copy> std::ops::Sub<&Tagged<T>> for Tagged<T> where T: std::ops::Sub<Output=T> {
+    type Output = Tagged<T>;
 
-impl<T> TrackedLe<T> for T where T: std::cmp::PartialOrd {
-    fn tracked_le(&self, rhs: &T) -> bool {
-        self <= rhs
+    fn sub(self, rhs: &Tagged<T>) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 - rhs.1)
     }
 }
 
-impl<T> TrackedLe<T> for Tagged<T> where T: std::cmp::PartialOrd {
-    fn tracked_le(&self, rhs: &Tagged<T>) -> bool {
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
-        self.1 <= rhs.1
+impl<T> std::ops::Mul for Tagged<T> where T: std::ops::Mul<Output=T> {
+    type Output = Tagged<T>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 * rhs.1)
     }
 }
 
-// impl<T> TrackedEq<T> for T where T: std::ops::Add<Output=T> {
-//     default fn tracked_add(self, rhs: T) -> T {
-//         self + rhs
-//     }
-// }
+impl<T: Copy> std::ops::Mul<&Tagged<T>> for Tagged<T> where T: std::ops::Mul<Output=T> {
+    type Output = Tagged<T>;
 
-// impl<T> TrackedAdd<T> for Tagged<T> where T: std::ops::Add<Output=T> {
-//     fn tracked_add(self, rhs: Tagged<T>) -> Tagged<T> {
-//         let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
-//         Tagged(merged, self.1 + rhs.1)
-//     }
-// }
+    fn mul(self, rhs: &Tagged<T>) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 * rhs.1)
+    }
+}
 
-// impl<T> std::cmp::PartialEq for Tagged<T>
-// where
-//     T: std::cmp::PartialEq,
-// {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.1 == other.1
-//     }
-// }
+impl<T> std::ops::Div for Tagged<T> where T: std::ops::Div<Output=T> {
+    type Output = Tagged<T>;
 
-// impl<T> std::cmp::PartialOrd for Tagged<T>
-// where
-//     T: std::cmp::PartialOrd,
-// {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         self.1.partial_cmp(&other.1)
-//     }
-// }
+    fn div(self, rhs: Self) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 / rhs.1)
+    }
+}
 
-// impl std::range::Step for Tagged<usize> {
-//     fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-//         if start.1 <= end.1 {
-//             let steps = end.1 - start.1;
-//             (steps, Some(steps))
-//         } else {
-//             (0, None)
-//         }
-//     }
+impl<T: Copy> std::ops::Div<&Tagged<T>> for Tagged<T> where T: std::ops::Div<Output=T> {
+    type Output = Tagged<T>;
 
-//     fn forward_checked(start: Self, count: usize) -> Option<Self> {
-//         Some(Tagged(start.0, start.1 + count))
-//     }
+    fn div(self, rhs: &Tagged<T>) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 / rhs.1)
+    }
+}
 
-//     fn backward_checked(start: Self, count: usize) -> Option<Self> {
-//         Some(Tagged(start.0, start.1 - count))
-//     }
-// }
+impl<T> std::ops::Rem for Tagged<T> where T: std::ops::Rem<Output=T> {
+    type Output = Tagged<T>;
 
-// impl<'a, A, B, C> std::ops::Index<Tagged<A>> for Tagged<&'a B>
-// where
-//     B: std::ops::Index<A, Output=&'a C>,
-//     C: 'a
-// {
-//     type Output = Tagged<&'a C>;
+    fn rem(self, rhs: Self) -> Self::Output {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        Tagged(merged, self.1 % rhs.1)
+    }
+}
 
-//     fn index(&self, index: Tagged<A>) -> &Self::Output {
-//         // let entry = self.1[index.1];
-//         &Tagged(self.0, self.1[index.1])
-//     }
-// }
+impl<T> std::ops::BitAnd for Tagged<T> where T: std::ops::BitAnd<Output=T> {
+    type Output = Tagged<T>;
 
-// could do something like this instead? then replace all [] ops with .at()?
-// impl<'a, Collection, Idx, T> Tagged<&'a Collection>
-// where
-//     Collection: std::ops::Index<Idx, Output=T>,
-// {
-//     pub fn at(&self, index: Tagged<Idx>) -> Tagged<&'a T> {
-//         Tagged(self.0, &self.1[index.1])
-//     }
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 & rhs.1)
+    }
+}
 
-//     pub fn at_range(&self, range: std::range::Range<usize>) -> Tagged<&'a [T]> {
-//         todo!()
-//     }
-// }
+impl<T: Copy> std::ops::BitAnd<&Tagged<T>> for Tagged<T> where T: std::ops::BitAnd<Output=T> {
+    type Output = Tagged<T>;
+
+    fn bitand(self, rhs: &Tagged<T>) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 & rhs.1)
+    }
+}
+
+impl<T> std::ops::BitOr for Tagged<T> where T: std::ops::BitOr<Output=T> {
+    type Output = Tagged<T>;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 | rhs.1)
+    }
+}
+
+impl<T: Copy> std::ops::BitOr<&Tagged<T>> for Tagged<T> where T: std::ops::BitOr<Output=T> {
+    type Output = Tagged<T>;
+
+    fn bitor(self, rhs: &Tagged<T>) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 | rhs.1)
+    }
+}
+
+impl<T> std::ops::BitXor for Tagged<T> where T: std::ops::BitXor<Output=T> {
+    type Output = Tagged<T>;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 ^ rhs.1)
+    }
+}
+
+impl<T: Copy> std::ops::BitXor<&Tagged<T>> for Tagged<T> where T: std::ops::BitXor<Output=T> {
+    type Output = Tagged<T>;
+
+    fn bitxor(self, rhs: &Tagged<T>) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 ^ rhs.1)
+    }
+}
+
+impl<T> std::ops::Shl for Tagged<T> where T: std::ops::Shl<Output=T> {
+    type Output = Tagged<T>;
+
+    fn shl(self, rhs: Self) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 << rhs.1)
+    }
+}
+
+impl<T: Copy> std::ops::Shl<&Tagged<T>> for Tagged<T> where T: std::ops::Shl<Output=T> {
+    type Output = Tagged<T>;
+
+    fn shl(self, rhs: &Tagged<T>) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 << rhs.1)
+    }
+}
+
+impl<T> std::ops::Shr for Tagged<T> where T: std::ops::Shr<Output=T> {
+    type Output = Tagged<T>;
+
+    fn shr(self, rhs: Self) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 >> rhs.1)
+    }
+}
+
+impl<T: Copy> std::ops::Shr<&Tagged<T>> for Tagged<T> where T: std::ops::Shr<Output=T> {
+    type Output = Tagged<T>;
+
+    fn shr(self, rhs: &Tagged<T>) -> Self::Output {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        Tagged(new_id, self.1 >> rhs.1)
+    }
+}
+
+// I am unsure of the Copy requirement here, would be nice to get rid of it
+impl<T> std::ops::AddAssign for Tagged<T> where T: std::ops::Add<Output=T> + Copy {
+    fn add_assign(&mut self, rhs: Self) {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        *self = Tagged(merged, self.1 + rhs.1);
+    }
+}
+
+impl<T> std::ops::SubAssign for Tagged<T> where T: std::ops::Sub<Output=T> + Copy + std::fmt::Debug {
+    fn sub_assign(&mut self, rhs: Self) {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        *self = Tagged(merged, self.1 - rhs.1);
+    }
+}
+
+impl<T> std::ops::MulAssign for Tagged<T> where T: std::ops::Mul<Output=T> + Copy {
+    fn mul_assign(&mut self, rhs: Self) {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        *self = Tagged(merged, self.1 * rhs.1);
+    }
+}
+
+impl<T> std::ops::DivAssign for Tagged<T> where T: std::ops::Div<Output=T> + Copy {
+    fn div_assign(&mut self, rhs: Self) {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        *self = Tagged(merged, self.1 / rhs.1);
+    }
+}
+
+impl<T> std::ops::RemAssign for Tagged<T> where T: std::ops::Rem<Output=T> + Copy {
+    fn rem_assign(&mut self, rhs: Self) {
+        let merged = ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &rhs.0);
+        *self = Tagged(merged, self.1 % rhs.1);
+    }
+}
+
+impl<T> std::ops::BitAndAssign for Tagged<T> where T: std::ops::BitAnd<Output=T> + Copy {
+    fn bitand_assign(&mut self, rhs: Self) {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        *self = Tagged(new_id, self.1 & rhs.1);
+    }
+}
+
+impl<T> std::ops::BitOrAssign for Tagged<T> where T: std::ops::BitOr<Output=T> + Copy {
+    fn bitor_assign(&mut self, rhs: Self) {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        *self = Tagged(new_id, self.1 | rhs.1);
+    }
+}
+
+impl<T> std::ops::BitXorAssign for Tagged<T> where T: std::ops::BitXor<Output=T> + Copy {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        *self = Tagged(new_id, self.1 ^ rhs.1);
+    }
+}
+
+impl<T> std::ops::ShlAssign for Tagged<T> where T: std::ops::Shl<Output=T> + Copy {
+    fn shl_assign(&mut self, rhs: Self) {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        *self = Tagged(new_id, self.1 << rhs.1);
+    }
+}
+
+impl<T> std::ops::ShrAssign for Tagged<T> where T: std::ops::Shr<Output=T> + Copy {
+    fn shr_assign(&mut self, rhs: Self) {
+        let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
+        *self = Tagged(new_id, self.1 >> rhs.1);
+    }
+}
+
+impl<T> std::ops::Neg for Tagged<T> where T: std::ops::Neg<Output=T> {
+    type Output = Tagged<T>;
+
+    fn neg(self) -> Self::Output {
+        Tagged(self.0, -self.1)
+    }
+}
+
+impl<T> std::ops::Not for Tagged<T> where T: std::ops::Not<Output = T> {
+    type Output = Tagged<T>;
+    fn not(self) -> Self::Output {
+        Tagged(self.0, !self.1)
+    }
+}
+
+impl<T> std::ops::Deref for Tagged<T> {
+    type Target = T;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.1
+    }
+}
