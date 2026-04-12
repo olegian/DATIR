@@ -22,6 +22,39 @@ use rustc_span::{Ident, Span};
 
 use crate::common::CanBeTupled;
 
+/// Information about a field in an external struct that needs a tagged variant
+#[derive(Debug, Clone)]
+pub struct StructFieldInfo {
+    /// Name of the field
+    pub name: String,
+    /// String representation of the original type (e.g., "u32")
+    pub ty_str: String,
+    /// Whether this field should be wrapped in Tagged<T>
+    pub should_tuple: bool,
+}
+
+/// Information about an external struct type that needs a tagged variant
+#[derive(Debug, Clone)]
+pub struct CompoundTypeInfo {
+    /// Name of the original type (e.g., "Foo")
+    pub original_name: String,
+    /// Name for the tagged variant (e.g., "__ati_Foo")
+    pub tagged_name: String,
+    /// Fields with their tagging info
+    pub fields: Vec<StructFieldInfo>,
+}
+
+/// What kind of return value an untracked function call produces
+#[derive(Debug, Clone)]
+pub enum UntrackedReturnKind {
+    /// Return type is a tupleable primitive — wrap in ATI::track()
+    Tupleable,
+    /// Return type is an external struct — convert to tagged variant
+    Compound(String), // tagged_name, key into compound_types map
+    /// Return type doesn't need special handling (unit, unsupported, etc.)
+    None,
+}
+
 /// Contains all information that is going to be passed between the
 /// first and second compilation rounds. Populated by invoking the
 /// compiler, using the GatherAtiInfo callbacks.
@@ -35,12 +68,17 @@ pub struct FirstPassInfo {
     array_to_slice_locs: HashSet<Span>,
     index_by_range_locs: HashSet<Span>,
 
-    /// places where a non-tracked function is called
-    /// mapped to whether the return type at that call site is tupleable (i.e. a tracked primitive).
-    // FIXME: these function calls could return complex types, like structs, which can be tupled but that requires
-    // defining a new struct with Tagged variants of all fields, and that's hard to do :(, ignoring for now.
-    // hopefully it won't be a problem...
-    untracked_fn_calls: HashMap<Span, bool>,
+    /// which user-defined types (structs, enums) are tracked
+    tracked_type_idents: HashSet<String>,
+
+    /// places where a non-tracked function is called, mapped to info about the return type
+    untracked_fn_calls: HashMap<Span, UntrackedReturnKind>,
+
+    /// places where indexing into an untracked container type occurs, mapped to return kind
+    untracked_index_locs: HashMap<Span, UntrackedReturnKind>,
+
+    /// external struct types that need tagged variant generation, keyed by tagged_name
+    compound_types: HashMap<String, CompoundTypeInfo>,
 }
 
 impl Default for FirstPassInfo {
@@ -48,7 +86,10 @@ impl Default for FirstPassInfo {
         Self {
             tracked_fn_def_ids: Default::default(),
             tracked_fn_idents: Default::default(),
+            tracked_type_idents: Default::default(),
             untracked_fn_calls: Default::default(),
+            untracked_index_locs: Default::default(),
+            compound_types: Default::default(),
 
             array_to_slice_locs: Default::default(),
             index_by_range_locs: Default::default(),
@@ -67,10 +108,22 @@ impl FirstPassInfo {
         self.tracked_fn_def_ids.insert(def_id);
     }
 
+    /// register that a type with `name` is user-defined and tracked
+    pub fn observe_tracked_type(&mut self, name: String) {
+        self.tracked_type_idents.insert(name);
+    }
+
     /// register that a function call was made to an untracked function at
-    /// `loc`, which returned a value of type `ty`
-    pub fn observe_untracked_fn_call<'a>(&mut self, loc: Span, ty: mir::ty::Ty<'a>) {
-        self.untracked_fn_calls.insert(loc, ty.can_be_tupled());
+    /// `loc`, with the given return kind
+    pub fn observe_untracked_fn_call(&mut self, loc: Span, kind: UntrackedReturnKind) {
+        self.untracked_fn_calls.insert(loc, kind);
+    }
+
+    /// register that an external struct type needs a tagged variant
+    pub fn register_compound_type(&mut self, info: CompoundTypeInfo) {
+        self.compound_types
+            .entry(info.tagged_name.clone())
+            .or_insert(info);
     }
 
     /// register that at this `loc`, an array was implicitly coereced to a slice
@@ -79,8 +132,18 @@ impl FirstPassInfo {
         self.array_to_slice_locs.insert(loc);
     }
 
+    /// register that an index expression at `loc` targets an untracked container type
+    pub fn observe_untracked_index(&mut self, loc: Span, kind: UntrackedReturnKind) {
+        self.untracked_index_locs.insert(loc, kind);
+    }
+
     pub fn observe_index_by_range(&mut self, loc: Span) {
         self.index_by_range_locs.insert(loc);
+    }
+
+    /// returns true if this type name represents a user-defined (tracked) type
+    pub fn is_type_tracked(&self, name: &str) -> bool {
+        self.tracked_type_idents.contains(name)
     }
 
     /// returns true if this identifier represent a tracked function
@@ -93,10 +156,30 @@ impl FirstPassInfo {
         self.tracked_fn_def_ids.contains(def_id)
     }
 
-    /// returns whether the return type of an untracked function call at this
-    /// location is tupleable, if such a call exists
-    pub fn is_untracked_call_ret_tupleable(&self, location: &Span) -> Option<bool> {
-        self.untracked_fn_calls.get(location).copied()
+    /// returns the return kind of an untracked function call at this location,
+    /// or None if no untracked call was recorded here
+    pub fn get_untracked_return_kind(&self, location: &Span) -> Option<&UntrackedReturnKind> {
+        self.untracked_fn_calls.get(location)
+    }
+
+    /// returns all compound types that need tagged variant generation
+    pub fn compound_types(&self) -> &HashMap<String, CompoundTypeInfo> {
+        &self.compound_types
+    }
+
+    /// If a type name matches an external struct with a tagged variant,
+    /// return the tagged variant name.
+    pub fn get_tagged_name_for_type(&self, type_name: &str) -> Option<&str> {
+        self.compound_types
+            .values()
+            .find(|info| info.original_name == type_name)
+            .map(|info| info.tagged_name.as_str())
+    }
+
+    /// returns the return kind of an untracked index expression at this location,
+    /// or None if no untracked index was recorded here
+    pub fn get_untracked_index_kind(&self, location: &Span) -> Option<&UntrackedReturnKind> {
+        self.untracked_index_locs.get(location)
     }
 
     pub fn is_span_ref_type_coercion(&self, location: &Span) -> bool {

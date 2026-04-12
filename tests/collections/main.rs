@@ -13,20 +13,15 @@ fn main() {
     let y = 2;
 
     foo(&v, x, y);
-    // x, y, and v[1] in same set
 
     let z = 4;
     bar(v, x, z);
-    // x, z also in the same set, through v[1]
 
-    // should this be mapping TV -> TV or V -> TV?
-    // does it matter?
     let mut hm = HashMap::new();
     hm.insert(1, 10);
     hm.insert(2, 20);
     hm.insert(3, 30);
 
-    // a and b in the same set, through hm[2]
     let a = 5;
     let b = 6;
     baz(&mut hm, 5, 6)

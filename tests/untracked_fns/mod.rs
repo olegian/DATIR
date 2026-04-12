@@ -22,7 +22,7 @@ fn untracked_fns() {
             .register("c", 2)
             .register("d", 2)
             .register("e", 3)
-            .register("RET", 3),
+            .register("RET", 4),
     );
     expected.register_site(
         ExpectedSite::new("max::ENTER")
@@ -34,6 +34,18 @@ fn untracked_fns() {
             .register("a", 0)
             .register("b", 0)
             .register("RET", 0),
+    );
+
+    expected.register_site(
+        ExpectedSite::new("bar::ENTER")
+            .register("x", 0)
+            .register("y", 1),
+    );
+    expected.register_site(
+        ExpectedSite::new("bar::EXIT")
+            .register("x", 0)
+            .register("y", 1)
+            .register("RET", 2),
     );
 
     let executable = Path::new(file!())

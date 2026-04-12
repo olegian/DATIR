@@ -14,9 +14,9 @@ use rustc_middle::ty::TyCtxt;
 use rustc_session::parse::ParseSess;
 
 use crate::{
-    common::DatirConfig,
+    common::{self, DatirConfig},
     file_loaders::transforming_loader::{FileType, Passes, TransformingFileLoader},
-    types::ati_info::FirstPassInfo,
+    types::ati_info::{CompoundTypeInfo, FirstPassInfo},
     visitors::{
         TransformVisitor, add_crate_attribute, define_types_from_file, generate_stubs, import_root_crate
     },
@@ -90,16 +90,15 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
             &compiler.sess.psess,
             krate,
         );
-        // add_crate_attribute(
-        //     "#![feature(step_trait)]",
-        //     &compiler.sess.psess,
-        //     krate,
-        // );
-        // add_crate_attribute(
-        //     "#![feature(new_range_api)]",
-        //     &compiler.sess.psess,
-        //     krate,
-        // );
+
+        // Generate tagged struct definitions and From impls for external
+        // struct types returned by untracked function calls.
+        for info in self.first_pass.compound_types().values() {
+            let code = generate_tagged_struct(info);
+            for item in common::parsing::parse_items(&compiler.sess.psess, code, None) {
+                krate.items.push(item);
+            }
+        }
 
         Compilation::Continue
     }
@@ -120,4 +119,79 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
     ) -> Compilation {
         Compilation::Continue
     }
+}
+
+/// Generates a tagged struct definition, a From<OriginalStruct> impl for
+/// converting untracked function returns, and a reverse From impl for
+/// converting back when passing to untracked functions.
+fn generate_tagged_struct(info: &CompoundTypeInfo) -> String {
+    let tagged_name = &info.tagged_name;
+    let original_name = &info.original_name;
+
+    // Generate struct fields
+    let fields: Vec<String> = info
+        .fields
+        .iter()
+        .map(|f| {
+            let ty = if f.should_tuple {
+                format!("Tagged<{}>", f.ty_str)
+            } else {
+                f.ty_str.clone()
+            };
+            format!("    pub {}: {},", f.name, ty)
+        })
+        .collect();
+
+    // Generate From<Original> -> Tagged conversion (tuple primitive fields)
+    let from_original_fields: Vec<String> = info
+        .fields
+        .iter()
+        .map(|f| {
+            if f.should_tuple {
+                format!("            {}: ATI::track(v.{}),", f.name, f.name)
+            } else {
+                format!("            {}: v.{},", f.name, f.name)
+            }
+        })
+        .collect();
+
+    // Generate From<Tagged> -> Original conversion (untuple primitive fields)
+    let from_tagged_fields: Vec<String> = info
+        .fields
+        .iter()
+        .map(|f| {
+            if f.should_tuple {
+                format!("            {}: v.{}.1,", f.name, f.name)
+            } else {
+                format!("            {}: v.{},", f.name, f.name)
+            }
+        })
+        .collect();
+
+    format!(
+        r#"
+pub struct {tagged_name} {{
+{fields}
+}}
+
+impl From<{original_name}> for {tagged_name} {{
+    fn from(v: {original_name}) -> Self {{
+        {tagged_name} {{
+{from_original_fields}
+        }}
+    }}
+}}
+
+impl From<{tagged_name}> for {original_name} {{
+    fn from(v: {tagged_name}) -> Self {{
+        {original_name} {{
+{from_tagged_fields}
+        }}
+    }}
+}}
+"#,
+        fields = fields.join("\n"),
+        from_original_fields = from_original_fields.join("\n"),
+        from_tagged_fields = from_tagged_fields.join("\n"),
+    )
 }

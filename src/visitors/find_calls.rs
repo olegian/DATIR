@@ -9,10 +9,13 @@ use rustc_hir as hir;
 use rustc_hir::def::Res;
 use rustc_hir::intravisit::{self, Visitor};
 use rustc_middle::hir::nested_filter;
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{self, TyCtxt};
 use rustc_middle::ty::adjustment::{Adjust, PointerCoercion};
 
-use crate::types::ati_info::FirstPassInfo;
+use crate::common::CanBeTupled;
+use crate::types::ati_info::{
+    CompoundTypeInfo, FirstPassInfo, StructFieldInfo, UntrackedReturnKind,
+};
 
 /// Visitor that finds all invocations of untracked functions and locations
 /// where an array to slice coercion takes place. Updates self.first_pass
@@ -20,6 +23,65 @@ use crate::types::ati_info::FirstPassInfo;
 pub struct AnalyzeHirVisitor<'tcx, 'a> {
     pub tcx: TyCtxt<'tcx>,
     pub first_pass: &'a mut FirstPassInfo,
+}
+
+impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
+    /// Determines the UntrackedReturnKind for a given return type.
+    /// For primitives, returns Tupleable. For external structs with all-public
+    /// fields, gathers field info and registers a compound type.
+    fn classify_untracked_return(&mut self, ret_ty: ty::Ty<'tcx>) -> UntrackedReturnKind {
+        // Peel references before checking — untracked functions often return
+        // &u32 (e.g. HashMap::get → Option<&V>, then unwrap → &V). The
+        // dereference happens implicitly and the value still needs to be tupled.
+        let peeled = ret_ty.peel_refs();
+        if peeled.can_be_tupled() {
+            return UntrackedReturnKind::Tupleable;
+        }
+
+        if let ty::TyKind::Adt(adt_def, substs) = ret_ty.kind() {
+            // Only handle external (non-local) structs — local structs
+            // get their fields tupled in-place by visit_item.
+            // Skip generic structs — their type parameters get tupled via
+            // recursively_tuple_type on generic args (e.g., Range<u32> → Range<Tagged<u32>>).
+            if adt_def.is_struct() && !adt_def.did().is_local() && substs.is_empty() {
+                let variant = adt_def.non_enum_variant();
+
+                // Can only convert structs with all-public fields
+                let all_public = variant.fields.iter().all(|f| {
+                    f.vis.is_public()
+                });
+                if !all_public || variant.fields.is_empty() {
+                    return UntrackedReturnKind::None;
+                }
+
+                let struct_name = self.tcx.item_name(adt_def.did()).to_string();
+                let tagged_name = format!("__ati_{struct_name}");
+
+                let fields: Vec<StructFieldInfo> = variant
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let field_ty = field.ty(self.tcx, substs);
+                        StructFieldInfo {
+                            name: field.name.to_string(),
+                            ty_str: field_ty.to_string(),
+                            should_tuple: field_ty.can_be_tupled(),
+                        }
+                    })
+                    .collect();
+
+                let info = CompoundTypeInfo {
+                    original_name: struct_name,
+                    tagged_name: tagged_name.clone(),
+                    fields,
+                };
+                self.first_pass.register_compound_type(info);
+                return UntrackedReturnKind::Compound(tagged_name);
+            }
+        }
+
+        UntrackedReturnKind::None
+    }
 }
 
 impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
@@ -61,7 +123,8 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                             // store all this information in FirstPassInfo.
                             let span = func.span;
                             let ret_ty = typeck.expr_ty(expr);
-                            self.first_pass.observe_untracked_fn_call(span, ret_ty);
+                            let kind = self.classify_untracked_return(ret_ty);
+                            self.first_pass.observe_untracked_fn_call(span, kind);
                         }
                     }
                 } else {
@@ -86,12 +149,52 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                 }
             }
 
+            // we've found a method call...
+            hir::ExprKind::MethodCall(segment, receiver, _args, _fn_span) => {
+                let ldid = expr.hir_id.owner.def_id;
+                let typeck = self.tcx.typeck(ldid);
+
+                if let Some(def_id) = typeck.type_dependent_def_id(expr.hir_id) {
+                    if !self.first_pass.is_fn_def_id_tracked(&def_id) {
+                        let recv_ty = typeck.expr_ty(receiver);
+
+                        // Skip methods that Tagged<T> overrides for specific receiver types.
+                        // Tagged provides its own len() for arrays and slices that preserves
+                        // the tag, so these should not be re-tupled at the boundary.
+                        let is_tagged_override = segment.ident.as_str() == "len"
+                            && (recv_ty.peel_refs().is_array() || recv_ty.peel_refs().is_slice());
+
+                        if !is_tagged_override {
+                            // untracked method call — record it so the second pass
+                            // can untuple arguments and tuple the return value.
+                            let ret_ty = typeck.expr_ty(expr);
+                            let kind = self.classify_untracked_return(ret_ty);
+                            self.first_pass.observe_untracked_fn_call(expr.span, kind);
+                        }
+                    }
+                }
+            }
+
             hir::ExprKind::Index(recv, idx, _) => {
                 let ldid = expr.hir_id.owner.def_id;
                 let typeck = self.tcx.typeck(ldid);
                 let idx_ty = typeck.expr_ty(idx);
                 if !idx_ty.is_numeric() {
                     self.first_pass.observe_index_by_range(expr.span);
+                }
+
+                // Check if the receiver is an untracked container type (e.g. Vec, HashMap).
+                // If so, record the span so the second pass can tuple the result.
+                let recv_ty = typeck.expr_ty(recv).peel_refs();
+                if let ty::TyKind::Adt(adt_def, _) = recv_ty.kind() {
+                    if !adt_def.did().is_local()
+                        && !recv_ty.is_array()
+                        && !recv_ty.is_slice()
+                    {
+                        let ret_ty = typeck.expr_ty(expr);
+                        let kind = self.classify_untracked_return(ret_ty);
+                        self.first_pass.observe_untracked_index(expr.span, kind);
+                    }
                 }
             }
             _ => {}

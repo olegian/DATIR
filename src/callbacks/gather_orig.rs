@@ -118,6 +118,20 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
             }
         }
 
+        // Collect user-defined type definitions (structs, enums) so we can
+        // distinguish tracked types from untracked (stdlib) types later.
+        for item_id in tcx.hir_free_items() {
+            let item = tcx.hir_item(item_id);
+            match &item.kind {
+                rustc_hir::ItemKind::Struct(ident, _, _)
+                | rustc_hir::ItemKind::Enum(ident, _, _) => {
+                    self.first_pass
+                        .observe_tracked_type(ident.as_str().to_string());
+                }
+                _ => {}
+            }
+        }
+
         // at this point, self.first_pass has knowledge of every single function that
         // requires instrumentation.
 

@@ -28,7 +28,7 @@ use rustc_session::parse::ParseSess;
 use rustc_span::{DUMMY_SP, Ident};
 
 use crate::common::{self, CanBeTupled};
-use crate::types::ati_info::FirstPassInfo;
+use crate::types::ati_info::{FirstPassInfo, UntrackedReturnKind};
 
 /// Enumerates the different types of operations that can be observed.
 enum OpKind {
@@ -94,33 +94,60 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             // back into a TaggedValue if necessary.
             ast::ExprKind::Call(func, args) => {
                 if let ast::ExprKind::Path(_, path) = &mut func.kind {
-                    // Update turbofish generics: f::<u32> -> f::<Tagged<u32>>
-                    for segment in path.segments.iter_mut() {
-                        self.tuple_generic_args_in_segment(segment);
-                    }
-
-                    if let Some(is_tupleable) =
-                        self.first_pass.is_untracked_call_ret_tupleable(&func.span)
+                    if let Some(return_kind) =
+                        self.first_pass.get_untracked_return_kind(&func.span)
                     {
+                        // Untracked call: untuple arguments, don't touch turbofish generics
                         for arg_expr in args.iter_mut() {
-                            *arg_expr = self.untuple(arg_expr.clone());
+                            *arg_expr = self.untuple_arg(arg_expr.clone());
                         }
 
-                        // FIXME: again, this is a bit wrong. We are currently ignoring the tracked/untracked boundary,
-                        // but you can imagine that an untracked func call returns some struct, which itself contains
-                        // values that need to be converted into Tagged<T>s. Right now, that case is entirely ignored,
-                        // this works properly if the returned value is a simple primitive.
-                        if is_tupleable {
-                            *expr = self.tuplify_expr(expr);
+                        match return_kind {
+                            UntrackedReturnKind::Tupleable => {
+                                *expr = self.tuplify_expr(expr);
+                            }
+                            UntrackedReturnKind::Compound(tagged_name) => {
+                                *expr = self.compound_convert(expr, tagged_name);
+                            }
+                            UntrackedReturnKind::None => {}
+                        }
+                    } else {
+                        // Tracked call: tuple turbofish generics to match
+                        // the instrumented type signatures
+                        for segment in path.segments.iter_mut() {
+                            self.tuple_generic_args_in_segment(segment);
                         }
                     }
                 }
             }
 
-            // Update turbofish generics on method calls
-            // at some point this should include more tracked/untracked boundary logic
-            ast::ExprKind::MethodCall(box ast::MethodCall { seg, .. }) => {
-                self.tuple_generic_args_in_segment(seg);
+            // Handle method calls: tuple turbofish generics for tracked methods,
+            // and handle the tracked/untracked boundary (untuple args, tuple return)
+            // for untracked methods.
+            ast::ExprKind::MethodCall(box ast::MethodCall { seg, args, .. }) => {
+                if let Some(return_kind) =
+                    self.first_pass.get_untracked_return_kind(&expr.span)
+                {
+                    // Untracked method: untuple arguments so the method
+                    // receives raw values (receiver is handled by Deref)
+                    for arg_expr in args.iter_mut() {
+                        *arg_expr = self.untuple_arg(arg_expr.clone());
+                    }
+
+                    match return_kind {
+                        UntrackedReturnKind::Tupleable => {
+                            *expr = self.tuplify_expr(expr);
+                        }
+                        UntrackedReturnKind::Compound(tagged_name) => {
+                            *expr = self.compound_convert(expr, tagged_name);
+                        }
+                        UntrackedReturnKind::None => {}
+                    }
+                } else {
+                    // Tracked method: tuple turbofish generics to match
+                    // the instrumented type signatures
+                    self.tuple_generic_args_in_segment(seg);
+                }
             }
 
             // Transform binary ops to include ATI_ANALYSIS calls to merge tags.
@@ -157,6 +184,22 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 if self.first_pass.is_span_index_by_range(&expr.span) {
                     // index_expr is some range, how should we treat ranges???
 
+                } else if let Some(return_kind) =
+                    self.first_pass.get_untracked_index_kind(&expr.span)
+                {
+                    // Indexing into an untracked container (Vec, HashMap, etc.):
+                    // untuple the index, and tuple the result back.
+                    *index_expr = self.untuple(index_expr.clone());
+
+                    match return_kind {
+                        UntrackedReturnKind::Tupleable => {
+                            *expr = self.tuplify_expr(expr);
+                        }
+                        UntrackedReturnKind::Compound(tagged_name) => {
+                            *expr = self.compound_convert(expr, tagged_name);
+                        }
+                        UntrackedReturnKind::None => {}
+                    }
                 } else {
                     *receiver_expr = self.untuple(receiver_expr.clone());
                     *index_expr = self.untuple(index_expr.clone());
@@ -478,11 +521,32 @@ impl<'a> TransformVisitor<'a> {
         }
     }
 
+    /// Converts an expression returning an external struct into its tagged variant.
+    /// Generates: `TaggedName::from(expr)`
+    fn compound_convert(&self, expr: &ast::Expr, tagged_name: &str) -> ast::Expr {
+        let expr_str = pprust::expr_to_string(expr);
+        common::parse_expr(self.psess, format!("{tagged_name}::from({expr_str})"))
+    }
+
     /// Takes a Tagged<T> expression and unwraps it to just T
     fn untuple(&self, expr: Box<ast::Expr>) -> Box<ast::Expr> {
         let mut node = ast::Expr::dummy();
         node.kind = ast::ExprKind::Field(expr, Ident::from_str("1"));
         Box::new(node)
+    }
+
+    /// Untuples a function/method argument, preserving any outer reference.
+    /// For `&tagged_expr`, produces `&(tagged_expr.1)` instead of `(&tagged_expr).1`
+    /// which would lose the reference through field access.
+    fn untuple_arg(&self, arg: Box<ast::Expr>) -> Box<ast::Expr> {
+        if let ast::ExprKind::AddrOf(borrow_kind, mutbl, ref inner) = arg.kind {
+            let untupled_inner = self.untuple(inner.clone());
+            let mut new_expr = ast::Expr::dummy();
+            new_expr.kind = ast::ExprKind::AddrOf(borrow_kind, mutbl, untupled_inner);
+            Box::new(new_expr)
+        } else {
+            self.untuple(arg)
+        }
     }
 
     ///////////////// Type Wrapping Helpers //////////////////////
@@ -651,6 +715,27 @@ impl<'a> TransformVisitor<'a> {
             }
 
             rustc_ast::TyKind::Path(_, ast::Path { segments, .. }) => {
+                // Check if the path's last segment matches an external struct
+                // that has a tagged variant. If so, replace the name.
+                if let Some(last) = segments.last() {
+                    if let Some(tagged_name) =
+                        self.first_pass.get_tagged_name_for_type(last.ident.as_str())
+                    {
+                        let last_idx = segments.len() - 1;
+                        segments[last_idx].ident = Ident::from_str(tagged_name);
+                        return;
+                    }
+                }
+
+                // Only recurse into generic args for user-defined (tracked) types.
+                // Untracked types (Vec, HashMap, etc.) keep their original generics
+                // because their internals are not instrumented.
+                if let Some(last) = segments.last() {
+                    if !self.first_pass.is_type_tracked(last.ident.as_str()) {
+                        return;
+                    }
+                }
+
                 for segment in segments.iter_mut() {
                     if let Some(box arg) = &mut segment.args {
                         match arg {

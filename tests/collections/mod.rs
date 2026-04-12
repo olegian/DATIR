@@ -4,6 +4,7 @@ use crate::common::{ExpectedOutput, ExpectedSite, compile_and_execute, delete, v
 
 // FIXME: This test is currently unused, as it tests functionality
 // that should be fixed when the std lib is instrumented.
+#[test]
 fn collections() {
     let mut expected = ExpectedOutput::new();
     expected.register_site(ExpectedSite::new("main::ENTER"));
