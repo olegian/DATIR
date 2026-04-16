@@ -158,6 +158,7 @@ pub fn generate_stubs(
 
     // actually add all the code to the crate
     for code in stub_code {
+        // datir_config.log("TMP", format!("\n====\nMAKING: \n{code}"));
         for item in parsing::parse_items(psess, code, None) {
             krate.items.insert(0, item);
         }
@@ -185,7 +186,7 @@ fn generic_params_to_string(generics: &ast::Generics) -> String {
     let params: Vec<String> = generics.params.iter().map(|param| {
         match &param.kind {
             ast::GenericParamKind::Lifetime => {
-                let name = format!("'{}", param.ident.as_str());
+                let name = param.ident.as_str().to_string();
                 if param.bounds.is_empty() {
                     name
                 } else {
@@ -224,11 +225,7 @@ fn generic_args_to_string(generics: &ast::Generics) -> String {
     }
 
     let args: Vec<String> = generics.params.iter().map(|param| {
-        match &param.kind {
-            ast::GenericParamKind::Lifetime => format!("'{}", param.ident.as_str()),
-            ast::GenericParamKind::Type { .. } => param.ident.as_str().to_string(),
-            ast::GenericParamKind::Const { .. } => param.ident.as_str().to_string(),
-        }
+        param.ident.as_str().to_string()
     }).collect();
 
     format!("<{}>", args.join(", "))

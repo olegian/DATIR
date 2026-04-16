@@ -41,6 +41,13 @@ pub struct FirstPassInfo {
     // defining a new struct with Tagged variants of all fields, and that's hard to do :(, ignoring for now.
     // hopefully it won't be a problem...
     untracked_fn_calls: HashMap<Span, bool>,
+
+    /// Argument expression spans (at untracked call sites) whose actual type is
+    /// a reference. Those args must not be untupled: trait method dispatch plus
+    /// `Tagged`'s `Deref` impl handles the `&Tagged<T>` → callee-expected form
+    /// on its own; naively unwrapping the `.1` field would strip the reference
+    /// and pass the value by copy/move instead.
+    ref_typed_untracked_call_args: HashSet<Span>,
 }
 
 impl Default for FirstPassInfo {
@@ -49,6 +56,7 @@ impl Default for FirstPassInfo {
             tracked_fn_def_ids: Default::default(),
             tracked_fn_idents: Default::default(),
             untracked_fn_calls: Default::default(),
+            ref_typed_untracked_call_args: Default::default(),
 
             array_to_slice_locs: Default::default(),
             index_by_range_locs: Default::default(),
@@ -71,6 +79,18 @@ impl FirstPassInfo {
     /// `loc`, which returned a value of type `ty`
     pub fn observe_untracked_fn_call<'a>(&mut self, loc: Span, ty: mir::ty::Ty<'a>) {
         self.untracked_fn_calls.insert(loc, ty.can_be_tupled());
+    }
+
+    /// register that an argument at `loc` (in an untracked function call) has
+    /// a reference type and should not be untupled at instrumentation time.
+    pub fn observe_ref_typed_untracked_arg(&mut self, loc: Span) {
+        self.ref_typed_untracked_call_args.insert(loc);
+    }
+
+    /// true if the arg at `loc` is a reference-typed arg to an untracked call
+    /// and should be passed through without untupling.
+    pub fn is_ref_typed_untracked_arg(&self, loc: &Span) -> bool {
+        self.ref_typed_untracked_call_args.contains(loc)
     }
 
     /// register that at this `loc`, an array was implicitly coereced to a slice

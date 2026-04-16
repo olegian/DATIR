@@ -1,0 +1,2 @@
+1. 'static lifetimes could get broken
+        imagine a static reference to an array, will it maintain it's static status after an ATI::track_array/track_slice call??

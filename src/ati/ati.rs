@@ -18,7 +18,7 @@
  *    to allow for more complicated dispatch patterns, based off the "most similar" type.
 */
 
-use crate::ati::tagged::{Id, Tagged, Tagger};
+use crate::ati::tagged::{Id, Tagged, TaggedSliceIndex, Tagger, Trackable};
 
 /// Top-level global that owns all information about all value interactions
 /// and ATI site states.
@@ -333,16 +333,31 @@ impl ATI {
         Tagged(id, value)
     }
 
-    // FIXME: This needs to recursively unify tags, you can imagine a 2d array, every inner array 
-    // needs to be in the same AT. right now they are separate. Probably needs a similar
-    // trait-based approach, like BindToSite. (trait Trackable?)
-    pub fn track_array<T, const N: usize>(array: [Tagged<T>; N]) -> Tagged<[Tagged<T>; N]> {
+    /// Wraps a raw array into a `Tagged<[E; N]>` with a fresh wrapper id, and
+    /// unifies tags so all elements at every depth share an AT per depth. The
+    /// element type `E` is any `Trackable` — typically `Tagged<U>`, but arrays
+    /// of references (e.g. `[&a[..], &b[..], &c[..]]` → `[&Tagged<&[T]>; 3]`)
+    /// also satisfy this bound because we specialize `Trackable` for
+    /// `&Tagged<..>` and `&mut Tagged<..>` wrappers. Non-tracked elements fall
+    /// into the default impl that contributes no ids.
+    ///
+    /// Specializations walk through nested `Tagged<[..]>` and `Tagged<&[..]>`
+    /// elements so arbitrarily-nested arrays end up with: one AT per nesting
+    /// depth containing every element at that depth, plus one AT for the new
+    /// wrapper.
+    pub fn track_array<E: Trackable, const N: usize>(array: [E; N]) -> Tagged<[E; N]> {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
-        for i in 0..(N - 1) {
-            ATI_ANALYSIS
-                .lock()
-                .unwrap()
-                .union_tags(&array[i], &array[i + 1]);
+
+        let mut ids_by_level: Vec<Vec<Id>> = Vec::new();
+        for i in 0..N {
+            array[i].collect_ids_by_level(&mut ids_by_level, 0);
+        }
+
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        for level_ids in ids_by_level.iter() {
+            for i in 0..level_ids.len().saturating_sub(1) {
+                ati.value_uf.union_tags(&level_ids[i], &level_ids[i + 1]);
+            }
         }
 
         Tagged(id, array)
@@ -350,6 +365,114 @@ impl ATI {
 
     pub fn track_slice<'a, T, const N: usize>(array: &'a Tagged<[T; N]>) -> Tagged<&'a [T]> {
         Tagged(array.0, &array.1)
+    }
+
+    pub fn track_slice_mut<'a, T, const N: usize>(
+        array: &'a mut Tagged<[T; N]>,
+    ) -> Tagged<&'a mut [T]> {
+        Tagged(array.0, &mut array.1)
+    }
+
+    /// Builds a `Tagged<&[T]>` that views a sub-range of a tracked array. The
+    /// resulting slice shares the backing array's id (all elements still belong
+    /// to the same AT), while the actual view respects the caller-supplied
+    /// range, so indexing and length semantics at runtime match the source.
+    /// `&arr[range]` — builds a tagged sub-slice from a tagged array and a
+    /// tagged range. Semantics: the slice's wrapper id is unioned with the
+    /// range's id, so slice/range/endpoints all end up in one AT; element
+    /// ids from the source array are preserved. Accepts any `TaggedSliceIndex`
+    /// (every `Tagged<Range*<Tagged<usize>>>` variant plus `Tagged<RangeFull>`).
+    pub fn track_subslice<'a, T, const N: usize, R>(
+        array: &'a Tagged<[T; N]>,
+        range: R,
+    ) -> Tagged<&'a [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        let raw = range.into_raw();
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .value_uf
+            .union_tags(&array.0, &range_id);
+        Tagged(array.0, &array.1[raw])
+    }
+
+    pub fn track_subslice_mut<'a, T, const N: usize, R>(
+        array: &'a mut Tagged<[T; N]>,
+        range: R,
+    ) -> Tagged<&'a mut [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        let raw = range.into_raw();
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .value_uf
+            .union_tags(&array.0, &range_id);
+        Tagged(array.0, &mut array.1[raw])
+    }
+
+    /// Constructs a `Tagged<Range<Tagged<T>>>` where the wrapper id and both
+    /// endpoints are unioned into the same AT. Range construction is the
+    /// point at which `lo` and `hi` "interact" — the range's wrapper id
+    /// represents the AT carried by every yielded value during iteration,
+    /// by a `len()` call, and by any slice produced through `arr[range]`.
+    pub fn track_range<T>(
+        start: Tagged<T>,
+        end: Tagged<T>,
+    ) -> Tagged<std::ops::Range<Tagged<T>>> {
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        let id = ati.value_uf.make_set();
+        ati.value_uf.union_tags(&id, &start.0);
+        ati.value_uf.union_tags(&id, &end.0);
+        Tagged(id, std::ops::Range { start, end })
+    }
+
+    pub fn track_range_inclusive<T>(
+        start: Tagged<T>,
+        end: Tagged<T>,
+    ) -> Tagged<std::ops::RangeInclusive<Tagged<T>>> {
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        let id = ati.value_uf.make_set();
+        ati.value_uf.union_tags(&id, &start.0);
+        ati.value_uf.union_tags(&id, &end.0);
+        Tagged(id, std::ops::RangeInclusive::new(start, end))
+    }
+
+    pub fn track_range_from<T>(
+        start: Tagged<T>,
+    ) -> Tagged<std::ops::RangeFrom<Tagged<T>>> {
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        let id = ati.value_uf.make_set();
+        ati.value_uf.union_tags(&id, &start.0);
+        Tagged(id, std::ops::RangeFrom { start })
+    }
+
+    pub fn track_range_to<T>(
+        end: Tagged<T>,
+    ) -> Tagged<std::ops::RangeTo<Tagged<T>>> {
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        let id = ati.value_uf.make_set();
+        ati.value_uf.union_tags(&id, &end.0);
+        Tagged(id, std::ops::RangeTo { end })
+    }
+
+    pub fn track_range_to_inclusive<T>(
+        end: Tagged<T>,
+    ) -> Tagged<std::ops::RangeToInclusive<Tagged<T>>> {
+        let mut ati = ATI_ANALYSIS.lock().unwrap();
+        let id = ati.value_uf.make_set();
+        ati.value_uf.union_tags(&id, &end.0);
+        Tagged(id, std::ops::RangeToInclusive { end })
+    }
+
+    pub fn track_range_full() -> Tagged<std::ops::RangeFull> {
+        let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
+        Tagged(id, std::ops::RangeFull)
     }
 
     /// Fetches a site, or creates it, with the given name.

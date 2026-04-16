@@ -76,7 +76,8 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             }
 
             // If this AddrOf operation was found to be a coercion between an array to an unsized slice
-            // then convert the Tagged<Array> to a Tagged<Slice>.
+            // then convert the Tagged<Array> to a Tagged<Slice>. `&arr[range]` patterns are
+            // handled specially so the range's actual bounds (and not just the id) are preserved.
             ast::ExprKind::AddrOf(_, _, _) => {
                 if self.first_pass.is_span_ref_type_coercion(&expr.span) {
                     *expr = self.array_to_slice(expr);
@@ -103,6 +104,18 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                         self.first_pass.is_untracked_call_ret_tupleable(&func.span)
                     {
                         for arg_expr in args.iter_mut() {
+                            // If the arg's resolved type was a reference in the
+                            // original (pre-instrumentation) crate, leave it
+                            // alone. Untupling `&x` → `(&x).1` would strip the
+                            // reference entirely; trait method dispatch and
+                            // `Tagged: Deref` already turn `&Tagged<T>` into
+                            // `&T` at the callee boundary when needed.
+                            if self
+                                .first_pass
+                                .is_ref_typed_untracked_arg(&arg_expr.span)
+                            {
+                                continue;
+                            }
                             *arg_expr = self.untuple(arg_expr.clone());
                         }
 
@@ -158,19 +171,48 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                     // index_expr is some range, how should we treat ranges???
 
                 } else {
+                    // TODO: change this to instead utilize std::ops::Index trait defined on Tagged<T>s? 
+                    // specifically this needs to have the index interact with the length tag.
+                    // same thing needs to happpen for ranges
                     *receiver_expr = self.untuple(receiver_expr.clone());
                     *index_expr = self.untuple(index_expr.clone());
                 }
             }
 
-            ast::ExprKind::Range(lo, hi, _) => {
-                lo.as_mut().map(|lo|  {
-                    *lo = self.untuple(lo.clone());
-                });
-
-                hi.as_mut().map(|hi|  {
-                    *hi = self.untuple(hi.clone());
-                });
+            // Transform range construction into a tracked-range constructor call.
+            // By this point walk_expr has already instrumented the endpoints (so
+            // literals/vars are Tagged<T>), and we hand them to the constructor
+            // which unions the wrapper id with each endpoint — making the range
+            // an AT that contains its endpoints, any value yielded during
+            // iteration, `len()`, and any slice produced through indexing.
+            ast::ExprKind::Range(lo, hi, limits) => {
+                let is_inclusive = matches!(limits, ast::RangeLimits::Closed);
+                let code = match (lo.as_ref(), hi.as_ref(), is_inclusive) {
+                    (Some(lo), Some(hi), false) => format!(
+                        "ATI::track_range({}, {})",
+                        pprust::expr_to_string(lo),
+                        pprust::expr_to_string(hi),
+                    ),
+                    (Some(lo), Some(hi), true) => format!(
+                        "ATI::track_range_inclusive({}, {})",
+                        pprust::expr_to_string(lo),
+                        pprust::expr_to_string(hi),
+                    ),
+                    (Some(lo), None, _) => format!(
+                        "ATI::track_range_from({})",
+                        pprust::expr_to_string(lo),
+                    ),
+                    (None, Some(hi), false) => format!(
+                        "ATI::track_range_to({})",
+                        pprust::expr_to_string(hi),
+                    ),
+                    (None, Some(hi), true) => format!(
+                        "ATI::track_range_to_inclusive({})",
+                        pprust::expr_to_string(hi),
+                    ),
+                    (None, None, _) => "ATI::track_range_full()".to_string(),
+                };
+                *expr = common::parse_expr(self.psess, code);
             }
 
             _ => {}
@@ -368,44 +410,45 @@ impl<'a> TransformVisitor<'a> {
         }
     }
 
-    /// Converts from a Tagged<[T; N]> to a Tagged<&[T]>
+    /// Rewrites a slice-coercion `AddrOf` expression into the matching ATI helper call:
+    ///   - `&arr`            -> `ATI::track_slice(&arr)`
+    ///   - `&mut arr`        -> `ATI::track_slice_mut(&mut arr)`
+    ///   - `&arr[range]`     -> `ATI::track_subslice(&arr, range)`
+    ///   - `&mut arr[range]` -> `ATI::track_subslice_mut(&mut arr, range)`
+    /// The source-level outer `&`/`&mut` is absorbed into the helper's return type
+    /// (`Tagged<&[T]>` / `Tagged<&mut [T]>`), matching the `tuple_slice` type-wrapping
+    /// convention. In the range-index case the original `range` expression is preserved
+    /// so the produced slice still covers the caller-specified bounds at runtime. Range
+    /// endpoints have already been untupled by the `Range` arm in `visit_expr` before
+    /// this runs, so `SliceIndex` sees raw `usize` bounds.
     fn array_to_slice(&self, expr: &mut ast::Expr) -> ast::Expr {
-        let ast::ExprKind::AddrOf(borrow_kind, mutbl, _inner_expr) = expr.kind.clone() else {
+        let ast::ExprKind::AddrOf(_, mutbl, inner) = &expr.kind else {
             unimplemented!(
                 "Only reference-based fat pointers are supported for array -> slice coercion"
             );
         };
 
-        let mut receiver_expr = ast::Expr::dummy();
-        receiver_expr.kind = ast::ExprKind::Path(
-            None,
-            ast::Path {
-                span: DUMMY_SP,
-                segments: [
-                    ast::PathSegment {
-                        ident: Ident::from_str("ATI"),
-                        id: DUMMY_NODE_ID,
-                        args: None,
-                    },
-                    ast::PathSegment {
-                        ident: Ident::from_str("track_slice"),
-                        id: DUMMY_NODE_ID,
-                        args: None,
-                    },
-                ]
-                .into(),
-                tokens: None,
-            },
-        );
+        let amp = match mutbl {
+            ast::Mutability::Mut => "&mut ",
+            ast::Mutability::Not => "&",
+        };
+        let is_mut = matches!(mutbl, ast::Mutability::Mut);
 
-        let mut call_expr = ast::Expr::dummy();
-        call_expr.kind =
-            ast::ExprKind::Call(Box::new(receiver_expr), [Box::new(expr.clone())].into());
+        let code = if let ast::ExprKind::Index(recv, idx, _) = &inner.kind {
+            let recv_str = pprust::expr_to_string(recv);
+            // `idx` is the transformed `ATI::track_range_*(..)` — a
+            // `Tagged<Range*>` that `track_subslice` handles via the
+            // `TaggedSliceIndex` bound (unioning tags + extracting raw index).
+            let idx_str = pprust::expr_to_string(idx);
+            let fn_name = if is_mut { "track_subslice_mut" } else { "track_subslice" };
+            format!("ATI::{fn_name}({amp}{recv_str}, {idx_str})")
+        } else {
+            let inner_str = pprust::expr_to_string(inner);
+            let fn_name = if is_mut { "track_slice_mut" } else { "track_slice" };
+            format!("ATI::{fn_name}({amp}{inner_str})")
+        };
 
-        let mut new_expr = ast::Expr::dummy();
-        new_expr.kind = ast::ExprKind::AddrOf(borrow_kind, mutbl, Box::new(call_expr));
-
-        new_expr
+        common::parse_expr(self.psess, code)
     }
 
     /// Converts from a [T; N] to a Tagged<[T; N]>
@@ -510,7 +553,12 @@ impl<'a> TransformVisitor<'a> {
         );
     }
 
-    /// Converts a &(mut?)[T] into a &(mut?)Tagged<&(mut?)[T]>
+    /// Converts a `&(mut)? [T]` into `Tagged<&(mut)? [T]>`. The source-level
+    /// outer reference is absorbed into the `Tagged` wrapper, so slice types
+    /// follow the same "value-shaped Tagged wrapper" convention as arrays
+    /// (`[T; N]` -> `Tagged<[Tagged<T>; N]>`). Matching `array_to_slice` below
+    /// produces no outer `&`, which keeps array literals of slice references
+    /// from borrowing short-lived temporaries.
     fn tuple_slice(&self, slice_ty: &mut ast::Ty) {
         let mut tagged_slice = ast::PathSegment::from_ident(Ident::from_str("Tagged"));
         tagged_slice.args = Some(Box::new(GenericArgs::AngleBracketed(
@@ -523,12 +571,7 @@ impl<'a> TransformVisitor<'a> {
             },
         )));
 
-        let mut outer_ref = slice_ty.clone();
-        let ast::TyKind::Ref(_lt, mut_ty) = &mut outer_ref.kind else {
-            unimplemented!("Slice behind non-reference pointer is currently unimplemented")
-        };
-
-        mut_ty.ty.kind = ast::TyKind::Path(
+        slice_ty.kind = ast::TyKind::Path(
             None,
             ast::Path {
                 span: DUMMY_SP,
@@ -536,8 +579,6 @@ impl<'a> TransformVisitor<'a> {
                 tokens: None,
             },
         );
-
-        slice_ty.kind = outer_ref.kind;
     }
 
     /// Converts a [T; N] into a Tagged<[T; N]>
@@ -604,7 +645,7 @@ impl<'a> TransformVisitor<'a> {
 
             rustc_ast::TyKind::Array(inner_ty, _) => {
                 self.recursively_tuple_type(inner_ty);
-                self.tuple_array(ty);
+                self.tuple_array(peeled_type);
             }
 
             rustc_ast::TyKind::Ptr(ast::MutTy { box ty, .. })
@@ -692,6 +733,25 @@ impl<'a> TransformVisitor<'a> {
                                 panic!("this panic is probably fine to remove")
                             }
                         }
+                    }
+                }
+
+                // FIXME: this is not resilient to custom types that are called "range".
+                // If this path refers to a std range type, wrap the whole
+                // type in Tagged so `std::ops::Range<usize>` becomes
+                // `Tagged<std::ops::Range<Tagged<usize>>>`.
+                if let Some(last) = segments.last() {
+                    let name = last.ident.name.as_str();
+                    if matches!(
+                        name,
+                        "Range"
+                            | "RangeInclusive"
+                            | "RangeFrom"
+                            | "RangeTo"
+                            | "RangeToInclusive"
+                            | "RangeFull"
+                    ) {
+                        self.tuple_type(peeled_type);
                     }
                 }
             }
