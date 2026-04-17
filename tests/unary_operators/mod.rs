@@ -45,8 +45,8 @@ fn unary_operators() {
     expected.register_site(
         ExpectedSite::new("dereference:::EXIT")
             .register("x", 0)
-            .register("y", 0)
-            .register("z", 0)
+            .register("y", 1)
+            .register("z", 1)
     );
 
 

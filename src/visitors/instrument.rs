@@ -15,11 +15,6 @@
  * - Struct/enum fields: T -> Tagged<T>
  * - Let bindings: T -> Tagged<T>
  * - Turbofish generics: f::<u32> -> f::<Tagged<u32>>
- *
- * REMAINING WORK:
- * Unary operations need to be pushed through to act on the underlying T rather than on Tagged<T>
- * Figure out what's going on with the tracked/untracked fn boundary
- * Indexing via Ranges is unverified.
 */
 use rustc_ast::mut_visit::{self, MutVisitor};
 use rustc_ast::{self as ast, BinOpKind, DUMMY_NODE_ID, GenericArgs, UnOp};
@@ -27,7 +22,7 @@ use rustc_ast_pretty::pprust;
 use rustc_session::parse::ParseSess;
 use rustc_span::{DUMMY_SP, Ident};
 
-use crate::common::{self, CanBeTupled};
+use crate::common::{self, CanBeTupled, DatirConfig};
 use crate::types::ati_info::FirstPassInfo;
 
 /// Enumerates the different types of operations that can be observed.
@@ -38,6 +33,7 @@ enum OpKind {
 }
 
 pub struct TransformVisitor<'a> {
+    datir_config: &'a DatirConfig,
     first_pass: &'a FirstPassInfo,
     psess: &'a ParseSess,
 }
@@ -70,9 +66,10 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 }
             }
 
-            // Assigning to a tagged value should consider the tags as being in the same AT
+            // Assigning to a tagged value should NOT consider the tags as being in the same AT
+            // as there is no interaction happening between any values here, just a move into different memory
             ast::ExprKind::Assign(lhs, rhs, _) => {
-                *expr = self.transform_assign(&lhs, &rhs);
+                // *expr = self.transform_assign(&lhs, &rhs);
             }
 
             // If this AddrOf operation was found to be a coercion between an array to an unsized slice
@@ -174,8 +171,8 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                     // TODO: change this to instead utilize std::ops::Index trait defined on Tagged<T>s? 
                     // specifically this needs to have the index interact with the length tag.
                     // same thing needs to happpen for ranges
-                    *receiver_expr = self.untuple(receiver_expr.clone());
-                    *index_expr = self.untuple(index_expr.clone());
+                    // *receiver_expr = self.untuple(receiver_expr.clone());
+                    // *index_expr = self.untuple(index_expr.clone());
                 }
             }
 
@@ -319,8 +316,8 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
 
 impl<'a> TransformVisitor<'a> {
     /// Consutrctor
-    pub fn new(first_pass: &'a FirstPassInfo, psess: &'a ParseSess) -> Self {
-        Self { first_pass, psess }
+    pub fn new(datir_config: &'a DatirConfig, first_pass: &'a FirstPassInfo, psess: &'a ParseSess) -> Self {
+        Self { datir_config, first_pass, psess }
     }
 
     ///////////////// Expression Instrumentation Helpers //////////////////////
@@ -374,11 +371,13 @@ impl<'a> TransformVisitor<'a> {
                 // handled by op impls on Tagged<T>
                 format!(
                     r#"{{
-                        {lhs_str} {op_str} {rhs_str}
+                        ({lhs_str} {op_str} {rhs_str})
                     }}"#
                 )
             }
         };
+
+        // self.datir_config.log("TMP", format!("======\n{block_str}"));
 
         common::parse_expr(self.psess, block_str)
     }

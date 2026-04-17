@@ -18,7 +18,7 @@
  *    to allow for more complicated dispatch patterns, based off the "most similar" type.
 */
 
-use crate::ati::tagged::{Id, Tagged, TaggedSliceIndex, Tagger, Trackable};
+use crate::ati::{collection::Collect, index::{TaggedSliceIndex, TaggedSliceable}, tagged::{Id, Tagged, Tagger}};
 
 /// Top-level global that owns all information about all value interactions
 /// and ATI site states.
@@ -345,7 +345,7 @@ impl ATI {
     /// elements so arbitrarily-nested arrays end up with: one AT per nesting
     /// depth containing every element at that depth, plus one AT for the new
     /// wrapper.
-    pub fn track_array<E: Trackable, const N: usize>(array: [E; N]) -> Tagged<[E; N]> {
+    pub fn track_array<T: Collect, const N: usize>(array: [T; N]) -> Tagged<[T; N]> {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
 
         let mut ids_by_level: Vec<Vec<Id>> = Vec::new();
@@ -373,47 +373,43 @@ impl ATI {
         Tagged(array.0, &mut array.1)
     }
 
-    /// Builds a `Tagged<&[T]>` that views a sub-range of a tracked array. The
-    /// resulting slice shares the backing array's id (all elements still belong
-    /// to the same AT), while the actual view respects the caller-supplied
-    /// range, so indexing and length semantics at runtime match the source.
-    /// `&arr[range]` — builds a tagged sub-slice from a tagged array and a
-    /// tagged range. Semantics: the slice's wrapper id is unioned with the
-    /// range's id, so slice/range/endpoints all end up in one AT; element
-    /// ids from the source array are preserved. Accepts any `TaggedSliceIndex`
-    /// (every `Tagged<Range*<Tagged<usize>>>` variant plus `Tagged<RangeFull>`).
-    pub fn track_subslice<'a, T, const N: usize, R>(
-        array: &'a Tagged<[T; N]>,
+    /// `&src[range]` — builds a tagged sub-slice from a tagged source and a
+    /// tagged range. The source can be either a tagged array (`Tagged<[T; N]>`)
+    /// or a tagged slice borrow (`Tagged<&[T]>`); both shapes flow through the
+    /// `TaggedSubsliceable` trait. Semantics: the produced slice's wrapper id
+    /// is the source's id (so all elements stay in the same AT) unioned with
+    /// the range's id, so slice/range/endpoints all end up in one AT; element
+    /// ids from the source are preserved. The range argument accepts any
+    /// `TaggedSliceIndex` (every `Tagged<Range*<Tagged<usize>>>` variant plus
+    /// `Tagged<RangeFull>`).
+    pub fn track_subslice<'a, T, S, R>(
+        collection: S,
         range: R,
     ) -> Tagged<&'a [T]>
     where
+        S: TaggedSliceable<'a, T>,
         R: TaggedSliceIndex<T>,
     {
+        let collection_id = collection.id();
         let range_id = range.id();
         let raw = range.into_raw();
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .value_uf
-            .union_tags(&array.0, &range_id);
-        Tagged(array.0, &array.1[raw])
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&collection_id, &range_id);
+        Tagged(range_id, collection.raw_subslice(raw))
     }
 
-    pub fn track_subslice_mut<'a, T, const N: usize, R>(
-        array: &'a mut Tagged<[T; N]>,
+    pub fn track_subslice_mut<'a, T, S, R>(
+        collection: S,
         range: R,
     ) -> Tagged<&'a mut [T]>
     where
+        S: TaggedSliceable<'a, T>,
         R: TaggedSliceIndex<T>,
     {
+        let collection_id = collection.id();
         let range_id = range.id();
         let raw = range.into_raw();
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .value_uf
-            .union_tags(&array.0, &range_id);
-        Tagged(array.0, &mut array.1[raw])
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&collection_id, &range_id);
+        Tagged(range_id, collection.raw_subslice_mut(raw))
     }
 
     /// Constructs a `Tagged<Range<Tagged<T>>>` where the wrapper id and both

@@ -2,15 +2,6 @@ use std::path::Path;
 
 use crate::common::{ExpectedOutput, ExpectedSite, compile_and_execute, delete, verify};
 
-// Exercises for-loop iteration over a range. The range construction
-// `lo..hi` must union lo's and hi's tags, and every yielded `i` must share
-// that same AT. The `acc = acc + i` accumulation then folds acc (and the
-// returned value) into the same AT. `unused` never interacts with the
-// range, so it stays isolated.
-//
-// At ENTER, lo/hi/unused are three distinct ATs — the range hasn't been
-// constructed yet. At EXIT (observed after the inner call returns),
-// lo/hi/RET have unified through the range+accumulator chain.
 #[test]
 fn ranges() {
     let mut expected = ExpectedOutput::new();
@@ -31,9 +22,7 @@ fn ranges() {
             .register("unused", 2)
             .register("RET", 1),
     );
-    // Same shape as sum_range — lo..=hi shares the AT with every yielded i,
-    // the accumulator, and RET. Verifies that RangeInclusive participates in
-    // the same tracked-range pipeline as HalfOpen.
+    
     expected.register_site(
         ExpectedSite::new("sum_range_inclusive:::ENTER")
             .register("lo", 1)
@@ -50,9 +39,6 @@ fn ranges() {
             .register("RET", 1),
     );
 
-    // pass_range — exercises Iterator::sum on a Tagged range. The range's AT
-    // covers the wrapper, both endpoints, and everything yielded during
-    // iteration; `unused` stays isolated.
     expected.register_site(
         ExpectedSite::new("pass_range:::ENTER")
             .register("range", 1)
@@ -65,7 +51,8 @@ fn ranges() {
             .register("range", 1)
             .register("range.start", 1)
             .register("range.end", 1)
-            .register("unused", 2),
+            .register("unused", 2)
+            .register("RET", 1),
     );
 
     // get_length — inherent Tagged::len() returns a Tagged<usize> carrying the
@@ -178,6 +165,24 @@ fn ranges() {
             .register("hi", 1)
             .register_array("RET", vec![4], 0, vec![1])
     );
+
+    // expected.register_site(
+    //     ExpectedSite::new("slice_and_modify:::ENTER")
+    //         .register_array("arr", vec![10], 0, vec![1])
+    //         .register("range", 2)
+    //         .register("range.start", 2)
+    //         .register("range.end", 2)
+    //         .register("value", 3)
+    // );
+    // expected.register_site(
+    //     ExpectedSite::new("slice_and_modify:::EXIT")
+    //         .register_array("arr", vec![10], 0, vec![1])
+    //         .register("range", 1)
+    //         .register("range.start", 1)
+    //         .register("range.end", 1)
+    //         .register("value", 0)
+    //         .register_array("RET", vec![10], 0, vec![1])
+    // );
 
     let executable = Path::new(file!()).parent().unwrap().join("ranges.out");
     delete(&executable);

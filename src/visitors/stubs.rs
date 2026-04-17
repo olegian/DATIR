@@ -650,12 +650,12 @@ fn create_struct_bind_impl(
 
     format!(
         r#"
-        impl{generic_params} BindToSite for {struct_name}{generic_args}{where_clause} {{
+        impl{generic_params} SiteBind for {struct_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 {bind_calls}
             }}
         }}
-        impl{generic_params} BindToSite for &{struct_name}{generic_args}{where_clause} {{
+        impl{generic_params} SiteBind for &{struct_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 (**self).bind(site, var_name);
             }}
@@ -723,14 +723,14 @@ fn create_enum_bind_impl(
 
     format!(
         r#"
-        impl{generic_params} BindToSite for {enum_name}{generic_args}{where_clause} {{
+        impl{generic_params} SiteBind for {enum_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 match self {{
                     {arms_str}
                 }}
             }}
         }}
-        impl{generic_params} BindToSite for &{enum_name}{generic_args}{where_clause} {{
+        impl{generic_params} SiteBind for &{enum_name}{generic_args}{where_clause} {{
             fn bind(&self, site: &mut Site, var_name: &str) {{
                 (**self).bind(site, var_name);
             }}

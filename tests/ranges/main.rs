@@ -21,7 +21,7 @@ fn main() {
     let arr = &[1; 10];
     index_with_range(arr, 1, 5);
 
-    slice_and_modify([2; 10], 0..5, 3);
+    // slice_and_modify([2; 10], 0..5, 3);
 }
 
 fn sum_range(lo: usize, hi: usize, mut acc: usize, unused: usize) -> usize {
@@ -42,8 +42,9 @@ fn get_length(range: std::ops::Range<usize>, a: usize) -> usize {
     a + range.len()
 }
 
-fn pass_range(range: std::ops::Range<usize>, unused: usize) {
-    let tmp: usize = range.sum();
+fn pass_range(range: std::ops::Range<usize>, unused: usize) -> usize{
+    let sum: usize = range.sum();
+    sum
 }
 
 fn reverse_sum(range: std::ops::Range<usize>) -> usize {
@@ -72,11 +73,9 @@ fn index_with_range<'a>(arr: &'a [u32; 10], lo: usize, hi: usize) -> &'a [u32] {
     &arr[lo..hi]
 }
 
-fn slice_and_modify(mut arr: [u32; 10], range: std::ops::Range<usize>, value: u32) -> [u32; 10] {
-    for i in range {
-        println!("{:?}", i);
-        arr[i] = value;
-    }
-
-    arr
-}
+// fn slice_and_modify(mut arr: [u32; 10], range: std::ops::Range<usize>, value: u32) -> [u32; 10] {
+//     for i in range {
+//         arr[i] = value;
+//     }
+//     arr
+// }
