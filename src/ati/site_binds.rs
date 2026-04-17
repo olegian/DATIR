@@ -54,18 +54,12 @@ impl<T, const N: usize> SiteBind for TaggedArray<T, N> {
 }
 impl<T, const N: usize> SiteBind for &TaggedArray<T, N> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..N {
-            self.1[i].bind(site, &format!("{var_name}[{i}]"));
-        }
+        (**self).bind(site, var_name);
     }
 }
 impl<T, const N: usize> SiteBind for &mut TaggedArray<T, N> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..N {
-            self.1[i].bind(site, &format!("{var_name}[{i}]"));
-        }
+        (**self).bind(site, var_name);
     }
 }
 
@@ -78,7 +72,20 @@ impl<T, const N: usize> SiteBind for &mut TaggedArray<T, N> {
 ///    &    Tagged<&mut [T]>
 ///    &mut Tagged<&mut [T]>
 // FIXME: does coercion from &mut -> & need to cause a change in type?
+impl<'a, T> SiteBind for TaggedSlice<'a, T> {
+    fn bind(&self, site: &mut Site, var_name: &str) {
+        site.bind(&format!("{var_name}_LEN"), self.len().0);
+        for i in 0..self.len().1 {
+            self.1[i].bind(site, &format!("{var_name}[{i}]"));
+        }
+    }
+}
 impl<'a, T> SiteBind for &TaggedSlice<'a, T> {
+    fn bind(&self, site: &mut Site, var_name: &str) {
+        (**self).bind(site, var_name);
+    }
+}
+impl<'a, T> SiteBind for TaggedSliceMut<'a, T> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
         for i in 0..self.len().1 {
@@ -88,18 +95,12 @@ impl<'a, T> SiteBind for &TaggedSlice<'a, T> {
 }
 impl<'a, T> SiteBind for &TaggedSliceMut<'a, T> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..self.len().1 {
-            self.1[i].bind(site, &format!("{var_name}[{i}]"));
-        }
+        (**self).bind(site, var_name);
     }
 }
 impl<'a, T> SiteBind for &mut TaggedSliceMut<'a, T> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..self.len().1 {
-            self.1[i].bind(site, &format!("{var_name}[{i}]"));
-        }
+        (**self).bind(site, var_name);
     }
 }
 

@@ -383,11 +383,11 @@ impl ATI {
     /// `TaggedSliceIndex` (every `Tagged<Range*<Tagged<usize>>>` variant plus
     /// `Tagged<RangeFull>`).
     pub fn track_subslice<'a, T, S, R>(
-        collection: S,
+        collection: &'a S,
         range: R,
     ) -> Tagged<&'a [T]>
     where
-        S: TaggedSliceable<'a, T>,
+        S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
     {
         let collection_id = collection.id();
@@ -398,11 +398,11 @@ impl ATI {
     }
 
     pub fn track_subslice_mut<'a, T, S, R>(
-        collection: S,
+        collection: &'a mut S,
         range: R,
     ) -> Tagged<&'a mut [T]>
     where
-        S: TaggedSliceable<'a, T>,
+        S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
     {
         let collection_id = collection.id();
