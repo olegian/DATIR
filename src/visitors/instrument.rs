@@ -435,16 +435,13 @@ impl<'a> TransformVisitor<'a> {
 
         let code = if let ast::ExprKind::Index(recv, idx, _) = &inner.kind {
             let recv_str = pprust::expr_to_string(recv);
-            // `idx` is the transformed `ATI::track_range_*(..)` — a
-            // `Tagged<Range*>` that `track_subslice` handles via the
-            // `TaggedSliceIndex` bound (unioning tags + extracting raw index).
             let idx_str = pprust::expr_to_string(idx);
             let fn_name = if is_mut { "track_subslice_mut" } else { "track_subslice" };
-            format!("ATI::{fn_name}({amp}{recv_str}, {idx_str})")
+            format!("{amp}ATI::{fn_name}({recv_str}, {idx_str})")
         } else {
             let inner_str = pprust::expr_to_string(inner);
             let fn_name = if is_mut { "track_slice_mut" } else { "track_slice" };
-            format!("ATI::{fn_name}({amp}{inner_str})")
+            format!("{amp}ATI::{fn_name}({amp}{inner_str})")
         };
 
         common::parse_expr(self.psess, code)
@@ -558,19 +555,37 @@ impl<'a> TransformVisitor<'a> {
     /// (`[T; N]` -> `Tagged<[Tagged<T>; N]>`). Matching `array_to_slice` below
     /// produces no outer `&`, which keeps array literals of slice references
     /// from borrowing short-lived temporaries.
-    fn tuple_slice(&self, slice_ty: &mut ast::Ty) {
+    fn tuple_slice(&self, outer_ty: &mut ast::Ty) {
+        let ast::TyKind::Ref(lt, ast::MutTy {
+            ty,
+            mutbl,
+        }) = &mut outer_ty.kind else {
+            panic!("Non-reference based slice type is unsupported");
+        };
+
+
         let mut tagged_slice = ast::PathSegment::from_ident(Ident::from_str("Tagged"));
         tagged_slice.args = Some(Box::new(GenericArgs::AngleBracketed(
             ast::AngleBracketedArgs {
                 span: DUMMY_SP,
                 args: [ast::AngleBracketedArg::Arg(ast::GenericArg::Type(
-                    Box::new(slice_ty.clone()),
+                    Box::new(
+                        ast::Ty {
+                            id: DUMMY_NODE_ID,
+                            kind: ast::TyKind::Ref(lt.clone(), ast::MutTy {
+                                ty: ty.clone(),
+                                mutbl: mutbl.clone()
+                            }),
+                            span: DUMMY_SP,
+                            tokens: None,
+                        },
+                    ),
                 ))]
                 .into(),
             },
         )));
 
-        slice_ty.kind = ast::TyKind::Path(
+        ty.kind = ast::TyKind::Path(
             None,
             ast::Path {
                 span: DUMMY_SP,

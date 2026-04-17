@@ -373,15 +373,6 @@ impl ATI {
         Tagged(array.0, &mut array.1)
     }
 
-    /// `&src[range]` — builds a tagged sub-slice from a tagged source and a
-    /// tagged range. The source can be either a tagged array (`Tagged<[T; N]>`)
-    /// or a tagged slice borrow (`Tagged<&[T]>`); both shapes flow through the
-    /// `TaggedSubsliceable` trait. Semantics: the produced slice's wrapper id
-    /// is the source's id (so all elements stay in the same AT) unioned with
-    /// the range's id, so slice/range/endpoints all end up in one AT; element
-    /// ids from the source are preserved. The range argument accepts any
-    /// `TaggedSliceIndex` (every `Tagged<Range*<Tagged<usize>>>` variant plus
-    /// `Tagged<RangeFull>`).
     pub fn track_subslice<'a, T, S, R>(
         collection: &'a S,
         range: R,
@@ -412,11 +403,6 @@ impl ATI {
         Tagged(range_id, collection.raw_subslice_mut(raw))
     }
 
-    /// Constructs a `Tagged<Range<Tagged<T>>>` where the wrapper id and both
-    /// endpoints are unioned into the same AT. Range construction is the
-    /// point at which `lo` and `hi` "interact" — the range's wrapper id
-    /// represents the AT carried by every yielded value during iteration,
-    /// by a `len()` call, and by any slice produced through `arr[range]`.
     pub fn track_range<T>(
         start: Tagged<T>,
         end: Tagged<T>,
