@@ -1,12 +1,12 @@
 use crate::ati::ati::Site;
 use crate::ati::tagged::{
     Tagged, TaggedArray, TaggedRange, TaggedRangeFrom, TaggedRangeFull, TaggedRangeInclusive,
-    TaggedRangeTo, TaggedRangeToInclusive, TaggedSlice, TaggedSliceMut,
+    TaggedRangeTo, TaggedRangeToInclusive, TaggedRef, TaggedRefMut,
 };
 
 /// Provides a method for recursively associating a variable `self` to some
 /// ATI site, with the given name. All Tagged<T>'s should implement this trait
-/// Compound types have to add an implementation of this trait during compile 
+/// Compound types have to add an implementation of this trait during compile
 /// time, to allow them to be bound to sites during runtime.
 /// The implementations below are required for the atomic/primitive types.
 pub trait SiteBind {
@@ -23,27 +23,47 @@ impl<T> SiteBind for T {
 }
 
 /// Most generic implementation used by all atomic tagged types (like Tagged<u32>).
-/// References to these values should be treated in the same way as the owned type.
+/// References to these values use TaggedRef / TaggedRefMut and bind the same
+/// way (via the borrowed Id).
 impl<T> SiteBind for Tagged<T> {
     default fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(var_name, self.0);
     }
 }
-impl<T> SiteBind for &Tagged<T> {
+impl<'a, T: ?Sized> SiteBind for TaggedRef<'a, T> {
     default fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(var_name, self.0);
+        site.bind(var_name, *self.0);
     }
 }
-impl<T> SiteBind for &mut Tagged<T> {
+impl<'a, T: ?Sized> SiteBind for TaggedRefMut<'a, T> {
     default fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(var_name, self.0);
+        site.bind(var_name, *self.0);
+    }
+}
+
+// Non-instrumented references to a SiteBind type delegate to their referent.
+// The outer `&` / `&mut` carries no Id of its own — it's a raw Rust reference
+// kept because pass 2 only converts the innermost `&` in a chain to a
+// `TaggedRef`. For nested shapes like `&&TaggedRef<u32>` (from source `&&&u32`),
+// these impls unwrap each outer layer until a `Tagged` / `TaggedRef` /
+// `TaggedRefMut` / user-struct impl handles the actual bind.
+impl<T> SiteBind for &T {
+    default fn bind(&self, site: &mut Site, var_name: &str) {
+        (**self).bind(site, var_name);
+    }
+}
+impl<T> SiteBind for &mut T {
+    default fn bind(&self, site: &mut Site, var_name: &str) {
+        (**self).bind(site, var_name);
     }
 }
 
 // ==========================    ARRAY TYPES   ===============================
 
 /// Binding an array should associate the length and values inside the array.
-/// References to these arrays should be treated in the same way as the owned array.
+/// References to these arrays share the same recursive treatment — the
+/// TaggedRef-over-array specialization walks each element via the
+/// TaggedRef<..>-over-element impls that follow.
 impl<T, const N: usize> SiteBind for TaggedArray<T, N> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
@@ -52,55 +72,42 @@ impl<T, const N: usize> SiteBind for TaggedArray<T, N> {
         }
     }
 }
-impl<T, const N: usize> SiteBind for &TaggedArray<T, N> {
+impl<'a, T, const N: usize> SiteBind for TaggedRef<'a, [T; N]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        (**self).bind(site, var_name);
+        site.bind(&format!("{var_name}_LEN"), *self.0);
+        for i in 0..N {
+            self.1[i].bind(site, &format!("{var_name}[{i}]"));
+        }
     }
 }
-impl<T, const N: usize> SiteBind for &mut TaggedArray<T, N> {
+impl<'a, T, const N: usize> SiteBind for TaggedRefMut<'a, [T; N]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        (**self).bind(site, var_name);
+        site.bind(&format!("{var_name}_LEN"), *self.0);
+        for i in 0..N {
+            self.1[i].bind(site, &format!("{var_name}[{i}]"));
+        }
     }
 }
 
 // ==========================    SLICE TYPES   ===============================
 
-/// Similar to arrays, slices should associate all contained values,
-/// and the length to the site.
-/// All of the following implementations seek to support:
-///    &    Tagged<&    [T]>
-///    &    Tagged<&mut [T]>
-///    &mut Tagged<&mut [T]>
-// FIXME: does coercion from &mut -> & need to cause a change in type?
-impl<'a, T> SiteBind for TaggedSlice<'a, T> {
+/// Slices are `TaggedRef<'_, [T]>` / `TaggedRefMut<'_, [T]>` — the source-level
+/// `&[T]` / `&mut [T]` is absorbed into the wrapper via unsized coercion from
+/// `TaggedRef<'_, [T; N]>`. Each element is recursively bound.
+impl<'a, T> SiteBind for TaggedRef<'a, [T]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..self.len().1 {
+        for i in 0..self.1.len() {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
     }
 }
-impl<'a, T> SiteBind for &TaggedSlice<'a, T> {
-    fn bind(&self, site: &mut Site, var_name: &str) {
-        (**self).bind(site, var_name);
-    }
-}
-impl<'a, T> SiteBind for TaggedSliceMut<'a, T> {
+impl<'a, T> SiteBind for TaggedRefMut<'a, [T]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
         site.bind(&format!("{var_name}_LEN"), self.len().0);
-        for i in 0..self.len().1 {
+        for i in 0..self.1.len() {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
-    }
-}
-impl<'a, T> SiteBind for &TaggedSliceMut<'a, T> {
-    fn bind(&self, site: &mut Site, var_name: &str) {
-        (**self).bind(site, var_name);
-    }
-}
-impl<'a, T> SiteBind for &mut TaggedSliceMut<'a, T> {
-    fn bind(&self, site: &mut Site, var_name: &str) {
-        (**self).bind(site, var_name);
     }
 }
 
@@ -159,14 +166,20 @@ macro_rules! tuple_impl_site_bind {
                 )+
             }
         }
-        impl<$($T),+> SiteBind for &($($T,)+) {
+        impl<'a, $($T),+> SiteBind for TaggedRef<'a, ($($T,)+)> {
             fn bind(&self, site: &mut Site, var_name: &str) {
-                (**self).bind(site, var_name);
+                site.bind(var_name, *self.0);
+                $(
+                    self.1.$idx.bind(site, &format!("{}.{}", var_name, stringify!($idx)));
+                )+
             }
         }
-        impl<$($T),+> SiteBind for &mut ($($T,)+) {
+        impl<'a, $($T),+> SiteBind for TaggedRefMut<'a, ($($T,)+)> {
             fn bind(&self, site: &mut Site, var_name: &str) {
-                (**self).bind(site, var_name);
+                site.bind(var_name, *self.0);
+                $(
+                    self.1.$idx.bind(site, &format!("{}.{}", var_name, stringify!($idx)));
+                )+
             }
         }
     };

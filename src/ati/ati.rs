@@ -18,7 +18,10 @@
  *    to allow for more complicated dispatch patterns, based off the "most similar" type.
 */
 
-use crate::ati::{collection::Collect, index::{TaggedSliceIndex, TaggedSliceable}, tagged::{Id, Tagged, Tagger}};
+// FIXME: this file definitiely has some dead code everywhere, and can probably be
+// refactored to remove some functions.
+
+use crate::ati::{collection::Collect, index::{TaggedSliceIndex, TaggedSliceable}, tagged::{Id, Tagged, TaggedRef, TaggedRefMut, Tagger}};
 
 /// Top-level global that owns all information about all value interactions
 /// and ATI site states.
@@ -103,7 +106,7 @@ impl Site {
         println!("{}", self.name);
         for (var, tag) in self.var_tags.iter() {
             let leader = self.type_uf.find(tag).unwrap();
-            println!("{var}:{leader:?}");
+            println!("{var} -> {leader:?}");
         }
         println!("---");
     }
@@ -363,44 +366,58 @@ impl ATI {
         Tagged(id, array)
     }
 
-    pub fn track_slice<'a, T, const N: usize>(array: &'a Tagged<[T; N]>) -> Tagged<&'a [T]> {
-        Tagged(array.0, &array.1)
+    /// Borrow a tagged array as a `TaggedRef<[T]>`. Relies on `CoerceUnsized`
+    /// to convert `TaggedRef<[T; N]>` -> `TaggedRef<[T]>` at the return site.
+    pub fn track_slice<'a, T, const N: usize>(array: &'a Tagged<[T; N]>) -> TaggedRef<'a, [T]> {
+        TaggedRef(&array.0, &array.1)
     }
 
+    /// Mutable borrow of a tagged array as a `TaggedRefMut<[T]>`. Splits the
+    /// `&mut Tagged<[T; N]>` into separate mutable borrows of the Id and array
+    /// fields, then relies on `CoerceUnsized` to unsize the array into a slice.
     pub fn track_slice_mut<'a, T, const N: usize>(
         array: &'a mut Tagged<[T; N]>,
-    ) -> Tagged<&'a mut [T]> {
-        Tagged(array.0, &mut array.1)
+    ) -> TaggedRefMut<'a, [T]> {
+        TaggedRefMut(&mut array.0, &mut array.1)
     }
 
+    /// Build a `TaggedRef<[T]>` viewing a subrange of `collection`. The
+    /// collection's own Id is reused for the subslice view — the UF merge
+    /// unifies the range and collection Id's leader, so any later tag
+    /// operations on either borrow see the same AT.
     pub fn track_subslice<'a, T, S, R>(
         collection: &'a S,
         range: R,
-    ) -> Tagged<&'a [T]>
+    ) -> TaggedRef<'a, [T]>
     where
         S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
     {
-        let collection_id = collection.id();
         let range_id = range.id();
-        let raw = range.into_raw();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&collection_id, &range_id);
-        Tagged(range_id, collection.raw_subslice(raw))
+        let (collection_id, subslice) = collection.raw_subslice(range.into_raw());
+
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(collection_id, &range_id);
+        TaggedRef(collection_id, subslice)
     }
 
+    /// Mutable-borrow counterpart of [`track_subslice`]. Because the Id borrow
+    /// is shared with the collection's own Id (see [`track_subslice`]), the
+    /// mutable subslice is handed an immutable borrow of the Id — downstream
+    /// operations that want to mutate the Id of the overall collection must go
+    /// through `ATI_ANALYSIS` rather than this borrow.
     pub fn track_subslice_mut<'a, T, S, R>(
         collection: &'a mut S,
         range: R,
-    ) -> Tagged<&'a mut [T]>
+    ) -> TaggedRefMut<'a, [T]>
     where
         S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
     {
-        let collection_id = collection.id();
         let range_id = range.id();
-        let raw = range.into_raw();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&collection_id, &range_id);
-        Tagged(range_id, collection.raw_subslice_mut(raw))
+        let (collection_id, subslice) = collection.raw_subslice_mut(range.into_raw());
+
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(collection_id, &range_id);
+        TaggedRefMut(collection_id, subslice)
     }
 
     pub fn track_range<T>(

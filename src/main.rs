@@ -10,6 +10,8 @@
 #![feature(min_specialization)]
 #![feature(step_trait)]
 #![feature(new_range_api)]
+#![feature(unsize)]
+#![feature(coerce_unsized)]
 
 extern crate rustc_ast;
 extern crate rustc_ast_pretty;
@@ -21,6 +23,7 @@ extern crate rustc_middle;
 extern crate rustc_parse;
 extern crate rustc_session;
 extern crate rustc_span;
+extern crate smallvec;
 
 use std::{env, sync::Arc};
 
@@ -99,10 +102,14 @@ pub fn main() {
         compiler_args.push(format!("-o{output}"))
     }
 
+    // The gather compilation
+    // panics on compilation failure, therefore by the time the instrument
+    // compilation starts, we know we are working with a semantically correct rust program
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
-    rustc_driver::run_compiler(&compiler_args, &mut gather_info); // panics on compilation failure
+    rustc_driver::run_compiler(&compiler_args, &mut gather_info);
     let first_pass = gather_info.into_first_pass_info();
 
+    // The instrument compilation
     let mut cbs =
         callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
     rustc_driver::run_compiler(&compiler_args, &mut cbs);

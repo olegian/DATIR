@@ -25,14 +25,13 @@ use crate::common::CanBeTupled;
 /// Contains all information that is going to be passed between the
 /// first and second compilation rounds. Populated by invoking the
 /// compiler, using the GatherAtiInfo callbacks.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FirstPassInfo {
     /// which user-defined functions are instrumented across the entire project
     tracked_fn_def_ids: HashSet<DefId>,
     tracked_fn_idents: HashSet<Ident>,
 
     /// places where a track_slice needs to be inserted, as a coercion from an array to a slice type occurred
-    array_to_slice_locs: HashSet<Span>,
     index_by_range_locs: HashSet<Span>,
 
     /// places where a non-tracked function is called
@@ -42,26 +41,22 @@ pub struct FirstPassInfo {
     // hopefully it won't be a problem...
     untracked_fn_calls: HashMap<Span, bool>,
 
-    /// Argument expression spans (at untracked call sites) whose actual type is
-    /// a reference. Those args must not be untupled: trait method dispatch plus
-    /// `Tagged`'s `Deref` impl handles the `&Tagged<T>` → callee-expected form
-    /// on its own; naively unwrapping the `.1` field would strip the reference
-    /// and pass the value by copy/move instead.
-    ref_typed_untracked_call_args: HashSet<Span>,
-}
+    /// Spans of Ref expressions, which refer to a type T which is tupleable.
+    ref_to_tupleable_ty: HashSet<Span>,
 
-impl Default for FirstPassInfo {
-    fn default() -> Self {
-        Self {
-            tracked_fn_def_ids: Default::default(),
-            tracked_fn_idents: Default::default(),
-            untracked_fn_calls: Default::default(),
-            ref_typed_untracked_call_args: Default::default(),
+    /// Spans of unary `*` expressions whose operand's type is `&T` / `&mut T`
+    /// with `T` tupleable. Post-instrumentation these operate on a
+    /// `TaggedRef` / `TaggedRefMut`, and a raw `*` would strip the tag —
+    /// pass 2 rewrites them to rebuild a `Tagged<T>` from the borrowed fields.
+    tag_stripping_deref_locs: HashSet<Span>,
 
-            array_to_slice_locs: Default::default(),
-            index_by_range_locs: Default::default(),
-        }
-    }
+    /// Spans of `Assign` / `AssignOp` whose LHS is `*expr` with `expr` typed
+    /// `&mut T` and `T` tupleable. A raw write through the instrumented
+    /// `TaggedRefMut<T>` hits `DerefMut` and only overwrites `.1` — the id
+    /// from the RHS never reaches the slot. Pass 2 rewrites these sites to
+    /// `expr.assign(rhs)` (double-write, no UF merge: assignment is not an
+    /// interaction).
+    assign_through_tagged_ref_mut_locs: HashSet<Span>,
 }
 
 impl FirstPassInfo {
@@ -81,26 +76,32 @@ impl FirstPassInfo {
         self.untracked_fn_calls.insert(loc, ty.can_be_tupled());
     }
 
-    /// register that an argument at `loc` (in an untracked function call) has
-    /// a reference type and should not be untupled at instrumentation time.
-    pub fn observe_ref_typed_untracked_arg(&mut self, loc: Span) {
-        self.ref_typed_untracked_call_args.insert(loc);
-    }
-
-    /// true if the arg at `loc` is a reference-typed arg to an untracked call
-    /// and should be passed through without untupling.
-    pub fn is_ref_typed_untracked_arg(&self, loc: &Span) -> bool {
-        self.ref_typed_untracked_call_args.contains(loc)
-    }
-
-    /// register that at this `loc`, an array was implicitly coereced to a slice
-    /// (which requires going from a Tagged<[T; N]> to a Tagged<&[T]>)
-    pub fn observe_slice_coercion(&mut self, loc: Span) {
-        self.array_to_slice_locs.insert(loc);
-    }
-
     pub fn observe_index_by_range(&mut self, loc: Span) {
         self.index_by_range_locs.insert(loc);
+    }
+    
+    pub fn observe_ref_to_tupleable_ty(&mut self, loc: Span) {
+        self.ref_to_tupleable_ty.insert(loc);
+    }
+    
+    pub fn is_span_ref_to_tupleable_ty(&self, loc: &Span) -> bool {
+        self.ref_to_tupleable_ty.contains(loc)
+    }
+
+    pub fn observe_tag_stripping_deref(&mut self, loc: Span) {
+        self.tag_stripping_deref_locs.insert(loc);
+    }
+
+    pub fn observe_assign_through_tagged_ref_mut(&mut self, loc: Span) {
+        self.assign_through_tagged_ref_mut_locs.insert(loc);
+    }
+
+    pub fn is_tag_stripping_deref(&self, loc: &Span) -> bool {
+        self.tag_stripping_deref_locs.contains(loc)
+    }
+
+    pub fn is_assign_through_tagged_ref_mut(&self, loc: &Span) -> bool {
+        self.assign_through_tagged_ref_mut_locs.contains(loc)
     }
 
     /// returns true if this identifier represent a tracked function
@@ -117,10 +118,6 @@ impl FirstPassInfo {
     /// location is tupleable, if such a call exists
     pub fn is_untracked_call_ret_tupleable(&self, location: &Span) -> Option<bool> {
         self.untracked_fn_calls.get(location).copied()
-    }
-
-    pub fn is_span_ref_type_coercion(&self, location: &Span) -> bool {
-        self.array_to_slice_locs.contains(location)
     }
 
     pub fn is_span_index_by_range(&self, location: &Span) -> bool {

@@ -1,50 +1,102 @@
-use crate::ati::{ati::ATI_ANALYSIS, tagged::Tagged};
+use crate::ati::{
+    ati::ATI_ANALYSIS,
+    tagged::{Id, Tagged, TaggedRef, TaggedRefMut},
+};
 
 // =====================    COMPARISON OPS / MARKERS    ===================
-/// A Tagged<T> is PartialEq iff T is PartialEq
-impl<T> std::cmp::PartialEq for Tagged<T>
-where
-    T: std::cmp::PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(&self.0, &other.0);
-        self.1.eq(&other.1)
-    }
+/// Every comparison across any pair of {Tagged, TaggedRef, TaggedRefMut}
+/// unions the two tags in the value union-find.
+/// This trait lets the macros below avoid matching on each tagged
+/// form separately
+trait TaggedCmpable<T: ?Sized> {
+    fn tagged_id(&self) -> &Id;
+    fn tagged_value(&self) -> &T;
 }
 
-/// A Tagged<T> is PartialOrd iff T is PartialOrd
-impl<T> std::cmp::PartialOrd for Tagged<T>
-where
-    T: std::cmp::PartialOrd,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(&self.0, &other.0);
-        self.1.partial_cmp(&other.1)
-    }
+impl<T: ?Sized> TaggedCmpable<T> for Tagged<T> {
+    fn tagged_id(&self) -> &Id { &self.0 }
+    fn tagged_value(&self) -> &T { &self.1 }
 }
 
-/// A Tagged<T> is Eq if T is Eq
-impl<T> std::cmp::Eq for Tagged<T> where T: std::cmp::Eq {}
-
-/// A Tagged<T> is Ord if T is Ord
-impl<T> std::cmp::Ord for Tagged<T>
-where
-    T: std::cmp::Ord,
-{
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(&self.0, &other.0);
-        self.1.cmp(&other.1)
-    }
+impl<'a, T: ?Sized> TaggedCmpable<T> for TaggedRef<'a, T> {
+    fn tagged_id(&self) -> &Id { self.0 }
+    fn tagged_value(&self) -> &T { self.1 }
 }
+
+impl<'a, T: ?Sized> TaggedCmpable<T> for TaggedRefMut<'a, T> {
+    fn tagged_id(&self) -> &Id { &*self.0 }
+    fn tagged_value(&self) -> &T { &*self.1 }
+}
+
+// PartialEq + PartialOrd between an Lhs and Rhs (both of which must impl
+// TaggedCmpable<T>). Unions the tags on every call before delegating
+// comparison to the underlying T.
+macro_rules! impl_tagged_partial_cmp {
+    ($($gens:tt),+ ; $lhs:ty, $rhs:ty) => {
+        impl<$($gens),+> std::cmp::PartialEq<$rhs> for $lhs
+        where
+            T: std::cmp::PartialEq,
+        {
+            fn eq(&self, other: &$rhs) -> bool {
+                ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(self.tagged_id(), other.tagged_id());
+                self.tagged_value().eq(other.tagged_value())
+            }
+        }
+
+        impl<$($gens),+> std::cmp::PartialOrd<$rhs> for $lhs
+        where
+            T: std::cmp::PartialOrd,
+        {
+            fn partial_cmp(&self, other: &$rhs) -> Option<std::cmp::Ordering> {
+                ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(self.tagged_id(), other.tagged_id());
+                self.tagged_value().partial_cmp(other.tagged_value())
+            }
+        }
+    };
+}
+
+// Eq + Ord for a self-type comparison. Eq/Ord require the same type on both
+// sides, so only the three self-self cases are valid.
+macro_rules! impl_tagged_total_cmp {
+    ($($gens:tt),+ ; $ty:ty) => {
+        impl<$($gens),+> std::cmp::Eq for $ty where T: std::cmp::Eq {}
+
+        impl<$($gens),+> std::cmp::Ord for $ty
+        where
+            T: std::cmp::Ord,
+        {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(self.tagged_id(), other.tagged_id());
+                self.tagged_value().cmp(other.tagged_value())
+            }
+        }
+    };
+}
+
+// All nine ordered pairs of {Tagged, TaggedRef, TaggedRefMut}.
+impl_tagged_partial_cmp!(T;             Tagged<T>,           Tagged<T>);
+impl_tagged_partial_cmp!('a, T;         Tagged<T>,           TaggedRef<'a, T>);
+impl_tagged_partial_cmp!('a, T;         Tagged<T>,           TaggedRefMut<'a, T>);
+impl_tagged_partial_cmp!('a, T;         TaggedRef<'a, T>,    Tagged<T>);
+impl_tagged_partial_cmp!('a, T;         TaggedRef<'a, T>,    TaggedRef<'a, T>);
+impl_tagged_partial_cmp!('a, 'b, T;     TaggedRef<'a, T>,    TaggedRefMut<'b, T>);
+impl_tagged_partial_cmp!('a, T;         TaggedRefMut<'a, T>, Tagged<T>);
+impl_tagged_partial_cmp!('a, 'b, T;     TaggedRefMut<'a, T>, TaggedRef<'b, T>);
+impl_tagged_partial_cmp!('a, T;         TaggedRefMut<'a, T>, TaggedRefMut<'a, T>);
+
+impl_tagged_total_cmp!(T;       Tagged<T>);
+impl_tagged_total_cmp!('a, T;   TaggedRef<'a, T>);
+impl_tagged_total_cmp!('a, T;   TaggedRefMut<'a, T>);
+
 
 // =====================    ARITHEMATIC OPS    ===================
 // all of these operators merge together the tags of the result, lhs, and rhs.
@@ -70,21 +122,21 @@ macro_rules! impl_tagged_arithematic_op {
             }
         }
 
-        impl<T: Copy> std::ops::$trait<&Tagged<T>> for Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait<TaggedRef<'a, T>> for Tagged<T>
         where
             T: std::ops::$trait<Output = T>,
         {
             type Output = Tagged<T>;
-            fn $method(self, rhs: &Tagged<T>) -> Self::Output {
+            fn $method(self, rhs: TaggedRef<'a, T>) -> Self::Output {
                 let merged = ATI_ANALYSIS
                     .lock()
                     .unwrap()
-                    .union_and_get_id(&self.0, &rhs.0);
-                Tagged(merged, self.1 $op rhs.1)
+                    .union_and_get_id(&self.0, rhs.0);
+                Tagged(merged, self.1 $op *rhs.1)
             }
         }
 
-        impl<T: Copy> std::ops::$trait for &Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait for TaggedRef<'a, T>
         where
             T: std::ops::$trait<Output = T>,
         {
@@ -93,12 +145,12 @@ macro_rules! impl_tagged_arithematic_op {
                 let merged = ATI_ANALYSIS
                     .lock()
                     .unwrap()
-                    .union_and_get_id(&self.0, &rhs.0);
-                Tagged(merged, self.1 $op rhs.1)
+                    .union_and_get_id(self.0, rhs.0);
+                Tagged(merged, *self.1 $op *rhs.1)
             }
         }
 
-        impl<T: Copy> std::ops::$trait<Tagged<T>> for &Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait<Tagged<T>> for TaggedRef<'a, T>
         where
             T: std::ops::$trait<Output = T>,
         {
@@ -107,8 +159,8 @@ macro_rules! impl_tagged_arithematic_op {
                 let merged = ATI_ANALYSIS
                     .lock()
                     .unwrap()
-                    .union_and_get_id(&self.0, &rhs.0);
-                Tagged(merged, self.1 $op rhs.1)
+                    .union_and_get_id(self.0, &rhs.0);
+                Tagged(merged, *self.1 $op rhs.1)
             }
         }
 
@@ -125,16 +177,16 @@ macro_rules! impl_tagged_arithematic_op {
             }
         }
 
-        impl<T: Copy> std::ops::$assign_trait<&Tagged<T>> for Tagged<T>
+        impl<'a, T: Copy> std::ops::$assign_trait<TaggedRef<'a, T>> for Tagged<T>
         where
             T: std::ops::$trait<Output = T> + Copy,
         {
-            fn $assign_method(&mut self, rhs: &Tagged<T>) {
+            fn $assign_method(&mut self, rhs: TaggedRef<'a, T>) {
                 let merged = ATI_ANALYSIS
                     .lock()
                     .unwrap()
-                    .union_and_get_id(&self.0, &rhs.0);
-                *self = Tagged(merged, self.1 $op rhs.1);
+                    .union_and_get_id(&self.0, rhs.0);
+                *self = Tagged(merged, self.1 $op *rhs.1);
             }
         }
     };
@@ -172,39 +224,39 @@ macro_rules! impl_tagged_shift_op {
             }
         }
 
-        impl<T: Copy> std::ops::$trait<&Tagged<T>> for Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait<TaggedRef<'a, T>> for Tagged<T>
         where
             T: std::ops::$trait<Output = T>,
         {
             type Output = Tagged<T>;
-            fn $method(self, rhs: &Tagged<T>) -> Self::Output {
+            fn $method(self, rhs: TaggedRef<'a, T>) -> Self::Output {
                 let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
                 ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, &self.0);
-                Tagged(new_id, self.1 $op rhs.1)
+                Tagged(new_id, self.1 $op *rhs.1)
             }
         }
 
-        impl<T: Copy> std::ops::$trait for &Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait for TaggedRef<'a, T>
         where
             T: std::ops::$trait<Output = T>,
         {
             type Output = Tagged<T>;
             fn $method(self, rhs: Self) -> Self::Output {
                 let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, &self.0);
-                Tagged(new_id, self.1 $op rhs.1)
+                ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, self.0);
+                Tagged(new_id, *self.1 $op *rhs.1)
             }
         }
 
-        impl<T: Copy> std::ops::$trait<Tagged<T>> for &Tagged<T>
+        impl<'a, T: Copy> std::ops::$trait<Tagged<T>> for TaggedRef<'a, T>
         where
             T: std::ops::$trait<Output = T>,
         {
             type Output = Tagged<T>;
             fn $method(self, rhs: Tagged<T>) -> Self::Output {
                 let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
-                ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, &self.0);
-                Tagged(new_id, self.1 $op rhs.1)
+                ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, self.0);
+                Tagged(new_id, *self.1 $op rhs.1)
             }
         }
 
@@ -219,14 +271,14 @@ macro_rules! impl_tagged_shift_op {
             }
         }
 
-        impl<T: Copy> std::ops::$assign_trait<&Tagged<T>> for Tagged<T>
+        impl<'a, T: Copy> std::ops::$assign_trait<TaggedRef<'a, T>> for Tagged<T>
         where
             T: std::ops::$trait<Output = T> + Copy,
         {
-            fn $assign_method(&mut self, rhs: &Tagged<T>) {
+            fn $assign_method(&mut self, rhs: TaggedRef<'a, T>) {
                 let new_id = ATI_ANALYSIS.lock().unwrap().make_id();
                 ATI_ANALYSIS.lock().unwrap().union_and_get_id(&new_id, &self.0);
-                *self = Tagged(new_id, self.1 $op rhs.1)
+                *self = Tagged(new_id, self.1 $op *rhs.1)
             }
         }
     };

@@ -27,6 +27,7 @@ mod binary_search;
 mod longest_increasing_subsequence;
 mod op_through_trait;
 mod assign_compound;
+mod references;
 
 // FIXME: It's kind of annoying that `cargo test` ends up showing this
 // file in the output, but I honestly didn't like any of the quick solutions

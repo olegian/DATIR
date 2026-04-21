@@ -1,7 +1,8 @@
 use crate::ati::{
     ati::ATI_ANALYSIS,
     tagged::{
-        Id, Tagged, TaggedArray, TaggedRange, TaggedRangeFrom, TaggedRangeFull, TaggedRangeInclusive, TaggedRangeTo, TaggedRangeToInclusive, TaggedSlice, TaggedSliceMut
+        Id, Tagged, TaggedArray, TaggedRange, TaggedRangeFrom, TaggedRangeFull,
+        TaggedRangeInclusive, TaggedRangeTo, TaggedRangeToInclusive, TaggedRef, TaggedRefMut,
     },
 };
 // ==============    REGULAR INDEXING   =================
@@ -33,8 +34,8 @@ where
     }
 }
 
-// &[T]
-impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedSlice<'slice, T>
+// TaggedRef<[T]>
+impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedRef<'slice, [T]>
 where
     [T]: std::ops::Index<Idx, Output=T>,
 {
@@ -44,13 +45,13 @@ where
         ATI_ANALYSIS
             .lock()
             .unwrap()
-            .union_and_get_id(&self.0, &index.0);
+            .union_and_get_id(self.0, &index.0);
         &self.1[index.1]
     }
 }
 
-// &mut [T]
-impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedSliceMut<'slice, T>
+// TaggedRefMut<[T]>
+impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedRefMut<'slice, [T]>
 where
     [T]: std::ops::Index<Idx, Output=T>,
 {
@@ -60,11 +61,11 @@ where
         ATI_ANALYSIS
             .lock()
             .unwrap()
-            .union_and_get_id(&self.0, &index.0);
+            .union_and_get_id(self.0, &index.0);
         &self.1[index.1]
     }
 }
-impl<'slice, Idx, T> std::ops::IndexMut<Tagged<Idx>> for TaggedSliceMut<'slice, T>
+impl<'slice, Idx, T> std::ops::IndexMut<Tagged<Idx>> for TaggedRefMut<'slice, [T]>
 where
     [T]: std::ops::IndexMut<Idx, Output=T>,
 {
@@ -72,7 +73,7 @@ where
         ATI_ANALYSIS
             .lock()
             .unwrap()
-            .union_and_get_id(&self.0, &index.0);
+            .union_and_get_id(self.0, &index.0);
         &mut self.1[index.1]
     }
 }
@@ -83,8 +84,8 @@ where
 /// access some collection e.g. in `array[range]`, `range`'s type must implement this trait.
 /// This allows for the Index operation to utilize the into_raw method to
 /// convert the tagged range into a simple range, after merging appropriate ids.
-pub trait TaggedSliceIndex<T> {
-    type Raw: std::slice::SliceIndex<[T], Output = [T]>;
+pub trait TaggedSliceIndex<Idx> {
+    type Raw: std::slice::SliceIndex<[Idx], Output = [Idx]>;
     fn id(&self) -> Id;
     fn into_raw(self) -> Self::Raw;
 }
@@ -151,64 +152,163 @@ impl<T> TaggedSliceIndex<T> for TaggedRangeFull {
 /// array implements TaggedSliceable. This allows calling .raw_subslice(range.into_raw())
 /// to slice into any slice/array with any tagged range.
 pub trait TaggedSliceable<'a, T> {
-    fn id(&self) -> Id;
-    fn raw_subslice<'b, R>(&'b self, range: R) -> &'b [T]
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>;
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> &'b mut [T]
+    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>;
 }
 
 // allows slicing [T; N]
 impl<'a, T, const N: usize> TaggedSliceable<'a, T> for TaggedArray<T, N> {
-    fn id(&self) -> Id { self.0 }
-    fn raw_subslice<'b, R>(&'b self, range: R) -> &'b [T]
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
     {
-        &self.1[range]
+        (&self.0, &self.1[range])
     }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> &'b mut [T]
+    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>
     {
-        &mut self.1[range]
+        (&mut self.0, &mut self.1[range])
     }
 }
 
-// allows slicing &[T]
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedSlice<'slice, T>
+// allows slicing TaggedRef<[T]>
+impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRef<'slice, [T]>
 {
-    fn id(&self) -> Id { self.0 }
-    fn raw_subslice<'b, R>(&'b self, range: R) -> &'b [T]
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
     {
-        &self.1[range]
+        (&self.0, &self.1[range])
     }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> &'b mut [T]
+    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]> 
+        R: std::slice::SliceIndex<[T], Output = [T]>
     {
-        panic!("Tried to get a mutable subslice behind an immutable slice (TaggedSlice)");
+        panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T]>)");
     }
 }
 
-// allows slicing &mut [T]
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedSliceMut<'slice, T>
+// allows slicing TaggedRefMut<[T]>
+impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T]>
 {
-    fn id(&self) -> Id { self.0 }
-    fn raw_subslice<'b, R>(&'b self, range: R) -> &'b [T]
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
     {
-        &self.1[range]
+        (&self.0, &self.1[range])
     }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> &'b mut [T]
+    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]> 
+        R: std::slice::SliceIndex<[T], Output = [T]>
     {
-        &mut self.1[range]
+        (&mut self.0, &mut self.1[range])
+    }
+}
+
+// allows slicing TaggedRef<[T; N]> (post-instrumentation form of `&[T; N]`)
+impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRef<'slice, [T; N]>
+{
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
+    where
+        R: std::slice::SliceIndex<[T], Output = [T]>,
+    {
+        (&self.0, &self.1[range])
+    }
+    fn raw_subslice_mut<'b, R>(&'b mut self, _range: R) -> (&'b mut Id, &'b mut [T])
+    where
+        R: std::slice::SliceIndex<[T], Output = [T]>
+    {
+        panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T; N]>)");
+    }
+}
+
+// allows slicing TaggedRefMut<[T; N]> (post-instrumentation form of `&mut [T; N]`)
+impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T; N]>
+{
+    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
+    where
+        R: std::slice::SliceIndex<[T], Output = [T]>,
+    {
+        (&self.0, &self.1[range])
+    }
+    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
+    where
+        R: std::slice::SliceIndex<[T], Output = [T]>
+    {
+        (&mut self.0, &mut self.1[range])
+    }
+}
+
+// Inherent `.subslice(range)` / `.subslice_mut(range)` helpers. These exist
+// alongside `ATI::track_subslice` / `track_subslice_mut` so pass 2 can emit
+// method-style calls that respect the receiver's outer lifetime for
+// TaggedRef / TaggedRefMut inputs (where `&arr` would only expose the local
+// binding's lifetime). Owned containers (TaggedArray) still use `&self` and
+// borrow from the local.
+impl<T, const N: usize> TaggedArray<T, N> {
+    pub fn subslice<R>(&self, range: R) -> TaggedRef<'_, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &range_id);
+        TaggedRef(&self.0, &self.1[range.into_raw()])
+    }
+    pub fn subslice_mut<R>(&mut self, range: R) -> TaggedRefMut<'_, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &range_id);
+        TaggedRefMut(&mut self.0, &mut self.1[range.into_raw()])
+    }
+}
+
+impl<'slice, T, const N: usize> TaggedRef<'slice, [T; N]> {
+    pub fn subslice<R>(self, range: R) -> TaggedRef<'slice, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        TaggedRef(self.0, &self.1[range.into_raw()])
+    }
+}
+
+impl<'slice, T> TaggedRef<'slice, [T]> {
+    pub fn subslice<R>(self, range: R) -> TaggedRef<'slice, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        TaggedRef(self.0, &self.1[range.into_raw()])
+    }
+}
+
+impl<'slice, T, const N: usize> TaggedRefMut<'slice, [T; N]> {
+    pub fn subslice_mut<R>(self, range: R) -> TaggedRefMut<'slice, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        TaggedRefMut(self.0, &mut self.1[range.into_raw()])
+    }
+}
+
+impl<'slice, T> TaggedRefMut<'slice, [T]> {
+    pub fn subslice_mut<R>(self, range: R) -> TaggedRefMut<'slice, [T]>
+    where
+        R: TaggedSliceIndex<T>,
+    {
+        let range_id = range.id();
+        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        TaggedRefMut(self.0, &mut self.1[range.into_raw()])
     }
 }

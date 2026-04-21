@@ -127,7 +127,7 @@ pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap
                 continue;
             }
 
-            let var_split: Vec<_> = var_info.split(":").collect();
+            let var_split: Vec<_> = var_info.split(" -> ").collect();
             site_ati_output.insert(
                 String::from(var_split[0]),
                 str::parse::<usize>(var_split[1]).unwrap(),

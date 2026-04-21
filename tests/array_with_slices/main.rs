@@ -13,10 +13,10 @@ fn main() {
     let b = [2; 4];
     let c = [3; 5];
     let arr = [&a[..], &b[..], &c[..]];
-    let mut slice = &mut [arr; 3][..];
-
     foo(arr, 1, 2, 99);
-    // bar(slice, 1, 2, 99);
+
+    let slice = &mut [arr; 3][..];
+    bar(slice, 1, 2, 99);
 }
 
 fn foo(arr: [&[u32]; 3], a: usize, b: u32, unused: u32) -> usize {
@@ -33,5 +33,14 @@ fn foo(arr: [&[u32]; 3], a: usize, b: u32, unused: u32) -> usize {
 }
 
 fn bar(slice: &mut [[&[u32]; 3]], a: usize, b: u32, unused: u32) -> usize {
-    panic!();
+    let tmp = if slice[0].len() > slice.len() {
+        slice[0].len()
+    } else {
+        slice[1].len()
+    };
+
+    let tmp2 = tmp + a;
+    let tmp3 = slice[0][0][0] * b;
+
+    99
 }

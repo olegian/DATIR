@@ -6,7 +6,7 @@
  * type sets.
 */
 
-use crate::ati::ati::{ATI_ANALYSIS, Site};
+use crate::ati::ati::ATI_ANALYSIS;
 
 /// type alias for Ids for ease of use, and to be able to quickly swap this out
 /// (although I doubt we'll need to).
@@ -37,13 +37,115 @@ impl Tagger {
 /// This isn't expected to be created directly, but is instead
 /// used as a return type from `ATI::track`.
 #[derive(Debug, Clone, Copy)]
-pub struct Tagged<T>(pub Id, pub T);
+pub struct Tagged<T: ?Sized>(pub Id, pub T);
+
+/// A shared "view" over a tagged value: one borrow of the Id, one borrow of
+/// the inner value. Produced by instrumenting &x when x is (directly or
+/// transitively) a Tagged<..>. The T: ?Sized bound lets TaggedRef<'a, [T]>
+/// serve as the slice representation, with unsized coercion from
+/// TaggedRef<'a, [T; N]> via `CoerceUnsized`.
+///
+/// Dereferences to T, which enables calling any &self method on T via
+/// auto-deref. Methods that would otherwise be hung off Tagged<T> (e.g. the
+/// slice `len()`) are declared directly on TaggedRef / TaggedRefMut since
+/// there is no single Tagged<T> value in memory to deref through.
+pub struct TaggedRef<'a, T: ?Sized>(pub &'a Id, pub &'a T);
+pub struct TaggedRefMut<'a, T: ?Sized>(pub &'a mut Id, pub &'a mut T);
+
+// Used to go from a Tagged<T> = (Id, T) -> TaggedRef(Mut?)<T> = (&(mut?) Id, &(mut?) T)
+impl<T> Tagged<T> {
+    fn as_tagged_ref(&self) -> TaggedRef<'_, T> {
+        TaggedRef(&self.0, &self.1)
+    }
+    fn as_tagged_ref_mut(&mut self) -> TaggedRefMut<'_, T> {
+        TaggedRefMut(&mut self.0, &mut self.1)
+    }
+}
+
+impl<'a, T> TaggedRefMut<'a, T> {
+    // Write both the id and value through the mutable borrow. Assignment
+    // is not an interaction, the destination's prior id is overwritten,
+    // not unioned with the RHS id. Raw `*refmut = v.1` via DerefMut would leak
+    // the id of the LHS slot unchanged; this helper is what pass 2 emits at
+    // assignments through a TaggedRefMut instead.
+    pub fn assign(&mut self, v: Tagged<T>) {
+        *self.0 = v.0;
+        *self.1 = v.1;
+    }
+}
+
+impl<'a, T: ?Sized> std::ops::Deref for TaggedRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.1
+    }
+}
+impl<'a, T: ?Sized> std::ops::Deref for TaggedRefMut<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.1
+    }
+}
+impl<'a, T: ?Sized> std::ops::DerefMut for TaggedRefMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.1
+    }
+}
+
+// Copy/Clone for TaggedRef only. TaggedRefMut holds unique borrows and must not
+// be Copy/Clone to avoid aliasing the mutable refs
+impl<'a, T: ?Sized> Clone for TaggedRef<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<'a, T: ?Sized> Copy for TaggedRef<'a, T> {}
+
+/// Debug implementations for printing TaggedRef<T>s
+impl<'a, T: ?Sized + std::fmt::Debug> std::fmt::Debug for TaggedRef<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_tuple("TaggedRef")
+            .field(self.0)
+            .field(&self.1)
+            .finish()
+    }
+}
+impl<'a, T: ?Sized + std::fmt::Debug> std::fmt::Debug for TaggedRefMut<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_tuple("TaggedRefMut")
+            .field(self.0)
+            .field(&self.1)
+            .finish()
+    }
+}
+
+impl<'a, T: ?Sized + std::fmt::Display> std::fmt::Display for TaggedRef<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+impl<'a, T: ?Sized + std::fmt::Display> std::fmt::Display for TaggedRefMut<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+
+// Automatic Unsized coercion: `TaggedRef<[T; N]>` -> `TaggedRef<[T]>` (and same for Mut).
+impl<'a, T, const N: usize, U> std::ops::CoerceUnsized<TaggedRef<'a, [U]>> for TaggedRef<'a, [T; N]> where
+    [T; N]: std::marker::Unsize<[U]>
+{
+}
+
+impl<'a, T, const N: usize, U> std::ops::CoerceUnsized<TaggedRefMut<'a, [U]>>
+    for TaggedRefMut<'a, [T; N]>
+where
+    [T; N]: std::marker::Unsize<[U]>,
+{
+}
 
 // The following type aliases describe common special-cased structures built up using
 // the above Tagged type
 pub type TaggedArray<T, const N: usize> = Tagged<[T; N]>;
-pub type TaggedSlice<'a, T> = Tagged<&'a [T]>;
-pub type TaggedSliceMut<'a, T> = Tagged<&'a mut [T]>;
 pub type TaggedRange<T> = Tagged<std::ops::Range<Tagged<T>>>;
 pub type TaggedRangeInclusive<T> = Tagged<std::ops::RangeInclusive<Tagged<T>>>;
 pub type TaggedRangeFrom<T> = Tagged<std::ops::RangeFrom<Tagged<T>>>;
@@ -51,26 +153,26 @@ pub type TaggedRangeTo<T> = Tagged<std::ops::RangeTo<Tagged<T>>>;
 pub type TaggedRangeToInclusive<T> = Tagged<std::ops::RangeToInclusive<Tagged<T>>>;
 pub type TaggedRangeFull = Tagged<std::ops::RangeFull>;
 
-/// Implementors of this trait are nested collections
-pub trait Nested {
-    fn collect_ids_by_level(&self, ids: &mut Vec<Vec<Id>>, depth: usize);
-}
+//////////////////// MISC TRAIT IMPLEMENTATIONS ////////////////////////////
+/// Below is a lot of trait implementations that may or may not be necessary.
+/// For now, they are helpful, and used as a proof of concept. These traits
+/// allow for ranges to work as iterators, supporting all iterator methods.
 
+/// Getting the length (from types that have a length), should return a
+/// Tagged<usize>, with the Id of the outermost tag.
 impl<T, const N: usize> TaggedArray<T, N> {
     pub fn len(&self) -> Tagged<usize> {
         Tagged(self.0, N)
     }
 }
-
-impl<'a, T> TaggedSlice<'a, T> {
+impl<'a, T> TaggedRef<'a, [T]> {
     pub fn len(&self) -> Tagged<usize> {
-        Tagged(self.0, self.1.len())
+        Tagged(*self.0, self.1.len())
     }
 }
-
-impl<'a, T> TaggedSliceMut<'a, T> {
+impl<'a, T> TaggedRefMut<'a, [T]> {
     pub fn len(&self) -> Tagged<usize> {
-        Tagged(self.0, self.1.len())
+        Tagged(*self.0, self.1.len())
     }
 }
 
@@ -135,10 +237,10 @@ impl<T: Copy + std::iter::Step> DoubleEndedIterator for Tagged<std::ops::Range<T
     }
 }
 
-impl<T: Copy + std::iter::Step> ExactSizeIterator for Tagged<std::ops::Range<Tagged<T>>>
-where
-    std::ops::Range<T>: ExactSizeIterator,
-{}
+impl<T: Copy + std::iter::Step> ExactSizeIterator for Tagged<std::ops::Range<Tagged<T>>> where
+    std::ops::Range<T>: ExactSizeIterator
+{
+}
 
 impl<T: Copy + std::iter::Step> std::iter::FusedIterator for Tagged<std::ops::Range<Tagged<T>>> {}
 
@@ -284,20 +386,6 @@ where
     }
 }
 
-/// Trackable for each `Tagged<Range*>` variant. The wrapper id sits at
-/// `depth`, and any tracked endpoints are recursed into at `depth + 1` —
-/// matching the treatment used for `Tagged<[T; N]>` / `Tagged<&[T]>` so
-/// arrays of ranges merge endpoints across elements correctly.
-/// Reference-wrapping specializations. An array literal whose elements are
-/// references to tracked values — e.g. `[&a[..], &b[..], &c[..]]` yielding
-/// `[&Tagged<&[T]>; 3]` — still needs to merge every descendant id into the
-/// same AT as if the referents were stored inline. We specialize per concrete
-/// wrapper kind so specialization picks up the recursive behavior for nested
-/// arrays / slices reachable through a reference.
-/// `Sum`/`Product` let instrumented code call `.sum()` / `.product()` on
-/// iterators of `Tagged<T>`. We fold via the existing tagged `Add` / `Mul`,
-/// which unions ids as it goes. Empty iterators fall back to the raw T's
-/// identity with a fresh Id from the analysis.
 impl<T> std::iter::Sum for Tagged<T>
 where
     Tagged<T>: std::ops::Add<Output = Tagged<T>>,

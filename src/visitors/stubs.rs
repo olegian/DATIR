@@ -1,8 +1,8 @@
 /* Walks the already-transformed AST to generate function stubs and BindToSite impls
  * to perform ENTER/EXIT site management.
- * 
+ *
  * Importantly, all instrumented functions are renamed to a new "inner" name,
- * the generated stub will be called the original function name, and then invoke
+ * the generated stub will be called the original function name, and will invoke
  * this inner function. Name conflicts are avoided by scanning over all user-defined
  * functions and methods, and then finding a suffix to append to the inner name
  * that makes it unique.
@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 /// This is specifically a string that is an invalid name for a struct or enum.
 const REGULAR_FUNCTION_NAMESPACE: &'static str = "-REGULAR-";
 
-/// Map of a namespace (the type of `Self`, or `REGULAR_FUNCTION_NAMESPACE`) to 
+/// Map of a namespace (the type of `Self`, or `REGULAR_FUNCTION_NAMESPACE`) to
 /// a set of all methods/functions defined in that namespace.
 type KnownNames = HashMap<String, HashSet<String>>;
 
@@ -48,7 +48,10 @@ pub fn generate_stubs(
     // fn/method names ahead of time, to later avoid collisions.
     let known_names: KnownNames = find_all_names(krate);
     if datir_config.print_function_signatures {
-        datir_config.log("FunctionStubs", format!("Known Funcs in File {module_path}:\n{:#?}\n", known_names));
+        datir_config.log(
+            "FunctionStubs",
+            format!("Known Funcs in File {module_path}:\n{:#?}\n", known_names),
+        );
     }
 
     let mut stub_code: Vec<String> = Vec::new();
@@ -84,7 +87,8 @@ pub fn generate_stubs(
             }
 
             // we found a struct definition
-            ast::ItemKind::Struct(ident, generics, ast::VariantData::Struct { fields, .. }) => {
+            ast::ItemKind::Struct(ident, generics, ast::VariantData::Struct { fields, .. })
+            | ast::ItemKind::Struct(ident, generics, ast::VariantData::Tuple(fields, ..)) => {
                 // structs, when passed between function boundaries need to be bind-ed to
                 // sites. This requires implementing the BindToSite trait on them, defined
                 // in the runtime library.
@@ -100,7 +104,9 @@ pub fn generate_stubs(
             // we found an impl block, defining methods on some type `self_ty`
             ast::ItemKind::Impl(ast::Impl {
                 generics: impl_generics,
-                self_ty, items, ..
+                self_ty,
+                items,
+                ..
             }) => {
                 let type_name = pprust::ty_to_string(self_ty);
                 let bare_type_name = bare_type_name(self_ty).unwrap_or_else(|| type_name.clone());
@@ -112,7 +118,7 @@ pub fn generate_stubs(
                 let mut method_stubs: Vec<String> = Vec::new();
 
                 // iterate through all methods defined in this impl block
-                // and perform a similar transformation as the one done for 
+                // and perform a similar transformation as the one done for
                 // free functions above.
                 for assoc_item in items.iter_mut() {
                     let ast::AssocItemKind::Fn(box ast::Fn {
@@ -126,9 +132,13 @@ pub fn generate_stubs(
                     };
 
                     let orig_name = ident.as_str().to_string();
-                    let new_name = get_unique_inner_name(Some(&type_name), &orig_name, &known_names);
+                    let new_name =
+                        get_unique_inner_name(Some(&type_name), &orig_name, &known_names);
                     if datir_config.print_function_signatures {
-                        datir_config.log("FunctionStubs", format!("Method Stub: {:#?}::{:#?}", type_name, new_name));
+                        datir_config.log(
+                            "FunctionStubs",
+                            format!("Method Stub: {:#?}::{:#?}", type_name, new_name),
+                        );
                     }
 
                     method_stubs.push(create_method_stub(
@@ -183,8 +193,10 @@ fn generic_params_to_string(generics: &ast::Generics) -> String {
         return String::new();
     }
 
-    let params: Vec<String> = generics.params.iter().map(|param| {
-        match &param.kind {
+    let params: Vec<String> = generics
+        .params
+        .iter()
+        .map(|param| match &param.kind {
             ast::GenericParamKind::Lifetime => {
                 let name = param.ident.as_str().to_string();
                 if param.bounds.is_empty() {
@@ -204,14 +216,18 @@ fn generic_params_to_string(generics: &ast::Generics) -> String {
                 s
             }
             ast::GenericParamKind::Const { ty, default, .. } => {
-                let mut s = format!("const {}: {}", param.ident.as_str(), pprust::ty_to_string(ty));
+                let mut s = format!(
+                    "const {}: {}",
+                    param.ident.as_str(),
+                    pprust::ty_to_string(ty)
+                );
                 if let Some(d) = default {
                     s.push_str(&format!(" = {}", pprust::expr_to_string(&d.value)));
                 }
                 s
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     format!("<{}>", params.join(", "))
 }
@@ -224,9 +240,11 @@ fn generic_args_to_string(generics: &ast::Generics) -> String {
         return String::new();
     }
 
-    let args: Vec<String> = generics.params.iter().map(|param| {
-        param.ident.as_str().to_string()
-    }).collect();
+    let args: Vec<String> = generics
+        .params
+        .iter()
+        .map(|param| param.ident.as_str().to_string())
+        .collect();
 
     format!("<{}>", args.join(", "))
 }
@@ -238,8 +256,11 @@ fn where_clause_to_string(generics: &ast::Generics) -> String {
         return String::new();
     }
 
-    let preds: Vec<String> = generics.where_clause.predicates.iter().map(|pred| {
-        match &pred.kind {
+    let preds: Vec<String> = generics
+        .where_clause
+        .predicates
+        .iter()
+        .map(|pred| match &pred.kind {
             ast::WherePredicateKind::BoundPredicate(bp) => {
                 pprust::where_bound_predicate_to_string(bp)
             }
@@ -254,8 +275,8 @@ fn where_clause_to_string(generics: &ast::Generics) -> String {
             ast::WherePredicateKind::EqPredicate(ep) => {
                 unreachable!("Found unsupported EqPredicate in where clause")
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     format!(" where {}", preds.join(", "))
 }
@@ -266,28 +287,24 @@ fn find_all_names(krate: &ast::Crate) -> KnownNames {
 
     for item in krate.items.iter() {
         match &item.kind {
-            ast::ItemKind::Fn(box ast::Fn {
-                ident,
-                ..
-            }) => {
-                known_names.entry(REGULAR_FUNCTION_NAMESPACE.to_string()).or_default().insert(ident.as_str().to_string());
+            ast::ItemKind::Fn(box ast::Fn { ident, .. }) => {
+                known_names
+                    .entry(REGULAR_FUNCTION_NAMESPACE.to_string())
+                    .or_default()
+                    .insert(ident.as_str().to_string());
             }
 
-            ast::ItemKind::Impl(ast::Impl {
-                self_ty, items, ..
-            }) => {
+            ast::ItemKind::Impl(ast::Impl { self_ty, items, .. }) => {
                 for assoc_item in items.iter() {
-                    let ast::AssocItemKind::Fn(box ast::Fn {
-                        ident,
-                        ..
-                    }) = &assoc_item.kind
-                    else {
+                    let ast::AssocItemKind::Fn(box ast::Fn { ident, .. }) = &assoc_item.kind else {
                         continue;
                     };
 
-
                     let self_ty = pprust::ty_to_string(self_ty);
-                    known_names.entry(self_ty).or_default().insert(ident.as_str().to_string());
+                    known_names
+                        .entry(self_ty)
+                        .or_default()
+                        .insert(ident.as_str().to_string());
                 }
             }
 
@@ -296,7 +313,6 @@ fn find_all_names(krate: &ast::Crate) -> KnownNames {
     }
 
     known_names
-
 }
 
 /// Creates a unique site name based off the file the function is defined in,
@@ -309,16 +325,16 @@ fn qualified_site_name(module_path: &str, name: &str) -> String {
     }
 }
 
-/// Creates an inner name that does not clash with any other function/method 
+/// Creates an inner name that does not clash with any other function/method
 /// defined in the file.
-fn get_unique_inner_name(namespace: Option<&str>, original: &str, known_names: &KnownNames) -> String {
+fn get_unique_inner_name(
+    namespace: Option<&str>,
+    original: &str,
+    known_names: &KnownNames,
+) -> String {
     let Some(known) = (match namespace {
-        Some(type_name) =>  {
-            known_names.get(type_name)
-        },
-        None => {
-            known_names.get(REGULAR_FUNCTION_NAMESPACE)
-        },
+        Some(type_name) => known_names.get(type_name),
+        None => known_names.get(REGULAR_FUNCTION_NAMESPACE),
     }) else {
         panic!("Attempting to generate stub name given an unknown namespace: {namespace:?}");
     };
@@ -364,7 +380,10 @@ fn get_param_name(param: &ast::Param) -> String {
 }
 
 /// Generates bind statements for parameters against a site variable.
-fn create_param_binds<'a>(site_name: &str, params: impl Iterator<Item=&'a ast::Param>) -> Vec<String> {
+fn create_param_binds<'a>(
+    site_name: &str,
+    params: impl Iterator<Item = &'a ast::Param>,
+) -> Vec<String> {
     params
         .filter(|param| {
             matches!(
@@ -386,13 +405,13 @@ fn create_param_binds<'a>(site_name: &str, params: impl Iterator<Item=&'a ast::P
 // ========== Stub generation ==========
 
 /// Creates a stub for a free function using the passed in information.
-/// 
-/// A function stub will create an ENTER site, with each input parameter bound to it, and 
-/// an EXIT site with each input parameter and the return value bound. Between these two 
-/// sites, the corresponding inner function is invoked. Importantly, the stub has the 
+///
+/// A function stub will create an ENTER site, with each input parameter bound to it, and
+/// an EXIT site with each input parameter and the return value bound. Between these two
+/// sites, the corresponding inner function is invoked. Importantly, the stub has the
 /// same original name of the inner function, which means any invocation of that function
 /// will now invoke this stub instead.
-/// 
+///
 /// Abstract Type information about the inputs and outputs is reported at these locations.
 fn create_fn_stub(
     config: &DatirConfig,
@@ -526,10 +545,11 @@ fn create_method_stub(
         ReceiverKind::RefMut => {
             non_self_inputs.next();
             "&mut self"
-        },
+        }
     };
 
-    let (other_declared, other_passed): (Vec<String>, Vec<String>) = non_self_inputs.clone()
+    let (other_declared, other_passed): (Vec<String>, Vec<String>) = non_self_inputs
+        .clone()
         .map(|param| {
             let name = get_param_name(param);
             let ptype = pprust::ty_to_string(&param.ty);
@@ -624,9 +644,9 @@ fn create_method_stub(
 }
 
 /// Implements the BindToSite trait (defined in the runtime library) on some struct.
-/// 
+///
 /// This allows calling struct.bind(site) to recursively associated all fields of the
-/// struct with the passed in site. Stub functions rely on this to add all relevant 
+/// struct with the passed in site. Stub functions rely on this to add all relevant
 /// values to sites.
 fn create_struct_bind_impl(
     struct_name: &str,
@@ -635,11 +655,20 @@ fn create_struct_bind_impl(
 ) -> String {
     let bind_calls = fields
         .iter()
-        .filter_map(|field| {
-            let field_name = field.ident.as_ref()?.as_str();
-            Some(format!(
-                r#"self.{field_name}.bind(site, &format!("{{var_name}}.{field_name}"));"#
-            ))
+        .enumerate()
+        .map(|(i, field)| {
+            let stmt = match &field.ident {
+                Some(field_name) => {
+                    let field_name = field_name.as_str();
+                    format!(
+                        r#"self.{field_name}.bind(site, &format!("{{var_name}}.{field_name}"));"#
+                    )
+                }
+                None => {
+                    format!(r#"self.{i}.bind(site, &format!("{{var_name}}.{i}"));"#)
+                }
+            };
+            stmt
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -679,16 +708,13 @@ fn create_enum_bind_impl(
                     format!("{enum_name}::{vname} => {{}}")
                 }
                 ast::VariantData::Tuple(fields, _) => {
-                    let vars: Vec<String> =
-                        (0..fields.len()).map(|i| format!("f{i}")).collect();
+                    let vars: Vec<String> = (0..fields.len()).map(|i| format!("f{i}")).collect();
                     let pattern = vars.join(", ");
                     let binds = vars
                         .iter()
                         .enumerate()
                         .map(|(i, v)| {
-                            format!(
-                                r#"(*{v}).bind(site, &format!("{{var_name}}<<{vname}>>.{i}"));"#
-                            )
+                            format!(r#"(*{v}).bind(site, &format!("{{var_name}}::{vname}.{i}"));"#)
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
@@ -704,7 +730,7 @@ fn create_enum_bind_impl(
                         .iter()
                         .map(|name| {
                             format!(
-                                r#"(*{name}).bind(site, &format!("{{var_name}}<<{vname}>>.{name}"));"#
+                                r#"(*{name}).bind(site, &format!("{{var_name}}::{vname}.{name}"));"#
                             )
                         })
                         .collect::<Vec<_>>()

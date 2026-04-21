@@ -75,8 +75,9 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         )));
     }
 
-    /// Define necessary types (namely Tagged<T>, but also globals like ATI_ANALYSIS) 
+    /// Defines necessary types (namely Tagged<T>, but also globals like ATI_ANALYSIS) 
     /// in the root file. All other files will import these types from the root.
+    /// Adds necessary compiler features.
     fn after_crate_root_parsing(
         &mut self,
         compiler: &interface::Compiler,
@@ -96,6 +97,16 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         );
         add_crate_attribute(
             "#![feature(step_trait)]",
+            &compiler.sess.psess,
+            krate,
+        );
+        add_crate_attribute(
+            "#![feature(unsize)]",
+            &compiler.sess.psess,
+            krate,
+        );
+        add_crate_attribute(
+            "#![feature(coerce_unsized)]",
             &compiler.sess.psess,
             krate,
         );
