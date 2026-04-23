@@ -5,3 +5,11 @@ version = 4
 [[package]]
 name = "compiler_queries"
 version = "0.1.0"
+dependencies = [
+ "decls-gen",
+]
+
+[[package]]
+name = "decls-gen"
+version = "0.1.0"
+source = "git+https://github.com/olegian/daikon-rust-decls-gen#3aa5fa737c85d1c80e533dcc4d1bcaa7aa25dfc8"

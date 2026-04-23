@@ -30,6 +30,8 @@ use std::{env, sync::Arc};
 use crate::args::{ArgParser, ArgSpec};
 use crate::common::DatirConfig;
 
+use decls_gen::DeclsFile;
+
 // included so VsCode's rust-analyzer extension runs static analysis on the runtime library
 mod ati;
 
@@ -101,6 +103,9 @@ pub fn main() {
     if let Some(output) = args.get_value("output") {
         compiler_args.push(format!("-o{output}"))
     }
+
+    // This is awesome.
+    // DeclsFile::from_source_file(crate_root_file);
 
     // The gather compilation
     // panics on compilation failure, therefore by the time the instrument
