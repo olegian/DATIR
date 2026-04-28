@@ -7,21 +7,18 @@
  * functions and methods, and then finding a suffix to append to the inner name
  * that makes it unique.
 */
+use decls_gen::decls::RETURN_VAR_NAME;
+use rustc_ast::mut_visit::{self, MutVisitor};
 use rustc_ast::{self as ast};
 use rustc_ast_pretty::pprust;
-use rustc_session::parse::ParseSess;
-use rustc_span::Ident;
+use rustc_span::symbol::kw;
 
-use crate::common::{DatirConfig, parsing};
-use std::collections::{HashMap, HashSet};
+use crate::common::{self, DatirConfig, parsing};
+use crate::types::ati_info::{FirstPassInfo, TypeKey};
 
-/// The namespace that free functions are defined under.
-/// This is specifically a string that is an invalid name for a struct or enum.
-const REGULAR_FUNCTION_NAMESPACE: &'static str = "-REGULAR-";
-
-/// Map of a namespace (the type of `Self`, or `REGULAR_FUNCTION_NAMESPACE`) to
-/// a set of all methods/functions defined in that namespace.
-type KnownNames = HashMap<String, HashSet<String>>;
+// FIXME: time for another rewrite.. this is unruly
+// probably split into a file for fns, a file for methods,
+// and a file for helpers...
 
 /// Describes how a method receives its `self` argument
 #[derive(Debug)]
@@ -36,157 +33,428 @@ pub enum ReceiverKind {
     RefMut,
 }
 
-/// Walks the crate, renames instrumented functions/methods to have "stub" names,
-/// generates all stub code, and inserts the parsed stubs into the crate
+/// For each fn/method in the crate (recursing into inline submodules),
+/// modifies the body of the function to create enter and exit sites
+/// with input parameters bound to each. The new body will then invoke
+/// an "inner" function, which holds the actual function logic. This
+/// inner function is also generated, with a non-colliding name and
+/// matching trait constraints/generics.
+///
+/// For each user-defined compound types, also generates a SiteBind impl,
+/// to allow associating the compound type's leaves with a site.
+///
+/// module_path is the file-derived Rust module path ("" for the crate
+/// root, "dep" for a non-root file).
 pub fn generate_stubs(
     datir_config: &DatirConfig,
+    first_pass: &FirstPassInfo,
     krate: &mut ast::Crate,
     module_path: &str,
-    psess: &ParseSess,
+    psess: &rustc_session::parse::ParseSess,
 ) {
-    // iterate through krate items once to find all
-    // fn/method names ahead of time, to later avoid collisions.
-    let known_names: KnownNames = find_all_names(krate);
-    if datir_config.print_function_signatures {
-        datir_config.log(
-            "FunctionStubs",
-            format!("Known Funcs in File {module_path}:\n{:#?}\n", known_names),
-        );
-    }
+    generate_stubs_in_mod(
+        datir_config,
+        first_pass,
+        &mut krate.items,
+        module_path,
+        psess,
+    );
+}
 
-    let mut stub_code: Vec<String> = Vec::new();
-    for item in krate.items.iter_mut() {
+/// Recursive worker for generate_stubs. Walks one module's items at
+/// mod_path, recursing into ItemKind::Mod with mod_path::sub_name.
+fn generate_stubs_in_mod(
+    datir_config: &DatirConfig,
+    first_pass: &FirstPassInfo,
+    items: &mut thin_vec::ThinVec<Box<ast::Item>>,
+    mod_path: &str,
+    psess: &rustc_session::parse::ParseSess,
+) {
+    // inner fns and the generated inherent impl blocks holding inner methods
+    let mut new_items: Vec<Box<ast::Item>> = Vec::new();
+
+    // Compound type SiteBind impls
+    let mut bind_impl_code: Vec<String> = Vec::new();
+
+    for item in items.iter_mut() {
         match &mut item.kind {
-            // we found a free function!
+            // Free functions
             ast::ItemKind::Fn(box ast::Fn {
                 ident,
                 generics,
                 sig: ast::FnSig { decl, .. },
+                body,
                 ..
             }) => {
-                // generate a non-clashing inner name based off the original name
+                // find a name for the function which does not conflict with
+                // any other name in the current module namespace.
                 let orig_name = ident.as_str().to_string();
-                let new_name = get_unique_inner_name(None, &orig_name, &known_names);
+                let known_names = first_pass.known_fn_names_in(mod_path, None);
+                let inner_name = get_unique_inner_name(&orig_name, &known_names);
                 if datir_config.print_function_signatures {
-                    datir_config.log("FunctionStubs", format!("Fn Stub: {:#?}", new_name));
+                    datir_config.log(
+                        "FunctionStubs",
+                        format!(
+                            "Generating free function stub for {mod_path}: {:?} -> {:?}",
+                            orig_name, inner_name
+                        ),
+                    );
                 }
 
-                // create a function stub for this function, to be added to the crate later
-                stub_code.push(create_fn_stub(
+                // find the name of the base program point name, discovered in the first pass
+                let entry = first_pass
+                    .lookup_free_fn(mod_path, ident.name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "stub generation could not find a FnEntry for free fn \
+                             `{orig_name}` in module `{mod_path}`"
+                        )
+                    });
+
+                // rip the original body out of the free function.
+                let orig_body = body.take().unwrap_or_else(|| {
+                    panic!(
+                        "free fn `{orig_name}` in module `{mod_path}` has no body."
+                    )
+                });
+
+                // construct fn item that will at some point contain the original body
+                let inner_template =
+                    build_inner_fn_template(&inner_name, generics, &decl.inputs, &decl.output);
+                let mut parsed_items = common::parse_items(psess, inner_template, None);
+                let mut inner_item = parsed_items
+                    .pop()
+                    .expect("inner-fn template did not parse into an item");
+
+                // get a mutable reference to the empty body and place the original
+                // body in there!
+                let ast::ItemKind::Fn(box ast::Fn {
+                    body: ref mut inner_body,
+                    ..
+                }) = inner_item.kind
+                else {
+                    panic!("inner-fn template did not yield ItemKind::Fn");
+                };
+                *inner_body = Some(orig_body);
+
+                // we will have to add this inner function item into the current
+                // module
+                new_items.push(inner_item);
+
+                // construct the "stub code", and insert it where the original body was.
+                let wrapper_src = build_fn_wrapper_block(
                     datir_config,
-                    module_path,
+                    &entry.base_ppt_name,
                     &orig_name,
-                    &new_name,
+                    &inner_name,
                     &decl.inputs,
                     &decl.output,
-                    generics,
-                ));
-
-                // rename the original function to the inner name
-                *ident = Ident::from_str(&new_name);
+                );
+                let parsed_wrapper = common::parse_expr(psess, wrapper_src);
+                let ast::ExprKind::Block(new_block, _) = parsed_wrapper.kind else {
+                    panic!(
+                        "wrapper-block source for free fn `{orig_name}` did not parse as a block"
+                    );
+                };
+                *body = Some(new_block);
             }
 
-            // we found a struct definition
+            // Struct definition, emit BindToSite impl.
             ast::ItemKind::Struct(ident, generics, ast::VariantData::Struct { fields, .. })
             | ast::ItemKind::Struct(ident, generics, ast::VariantData::Tuple(fields, ..)) => {
-                // structs, when passed between function boundaries need to be bind-ed to
-                // sites. This requires implementing the BindToSite trait on them, defined
-                // in the runtime library.
-                stub_code.push(create_struct_bind_impl(ident.as_str(), fields, generics));
+                bind_impl_code.push(create_struct_bind_impl(ident.as_str(), fields, generics));
             }
 
-            // we found an enum definition
+            // Enum definition, emit BindToSite impl.
             ast::ItemKind::Enum(ident, generics, ast::EnumDef { variants }) => {
-                // similar to structs, enums require the BindToSite trait to be impled as well
-                stub_code.push(create_enum_bind_impl(ident.as_str(), variants, generics));
+                bind_impl_code.push(create_enum_bind_impl(ident.as_str(), variants, generics));
             }
 
-            // we found an impl block, defining methods on some type `self_ty`
+            // Impl block come in two flavors, inherent and trait-based.
+            // we treat them very similary though! Same strategy to replace
+            // the existing body with a stub, but we then create a whole impl
+            // block to house the inner method. It's important to carry across
+            // the where clause, and any introduced generics into the new impl.
             ast::ItemKind::Impl(ast::Impl {
                 generics: impl_generics,
+                of_trait,
                 self_ty,
-                items,
+                items: impl_items,
                 ..
             }) => {
+                // split apart the impl block components
                 let type_name = pprust::ty_to_string(self_ty);
-                let bare_type_name = bare_type_name(self_ty).unwrap_or_else(|| type_name.clone());
+                let type_key =
+                    ast_impl_type_key(of_trait.as_deref().map(|h| &h.trait_ref), self_ty)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "stub generation could not derive TypeKey from impl self-type \
+                             `{type_name}` in module `{mod_path}`; only path self/trait \
+                             types are supported"
+                            )
+                        });
                 let impl_generic_params = generic_params_to_string(impl_generics);
                 let impl_where_clause = where_clause_to_string(impl_generics);
 
-                // separate method stubs vec to only construct a single
-                // impl which contains all of the new stub functions
-                let mut method_stubs: Vec<String> = Vec::new();
+                // traits can have associated types!! if any are defined
+                // and used within the original body, we need to change them
+                // to be fully qualified (e.g. <Self as Add>::Output).
+                // Given that we need to do this for all associated functions,
+                // extract the list of segments in the trait early
+                let trait_segs: Option<thin_vec::ThinVec<ast::PathSegment>> = of_trait
+                    .as_deref()
+                    .map(|h| h.trait_ref.path.segments.clone());
 
-                // iterate through all methods defined in this impl block
-                // and perform a similar transformation as the one done for
-                // free functions above.
-                for assoc_item in items.iter_mut() {
+                // all items in this impl will be in this namespace
+                let known_names = first_pass.known_fn_names_in(mod_path, Some(&type_key));
+
+                let mut inner_templates: Vec<String> = Vec::new();
+                let mut taken_bodies = Vec::new();
+
+                for assoc_item in impl_items.iter_mut() {
+                    // we only care about functions in impl blocks.
                     let ast::AssocItemKind::Fn(box ast::Fn {
                         ident,
                         generics: method_generics,
                         sig: ast::FnSig { decl, .. },
+                        body,
                         ..
                     }) = &mut assoc_item.kind
                     else {
                         continue;
                     };
 
+                    // same strategy here as free functions.
                     let orig_name = ident.as_str().to_string();
-                    let new_name =
-                        get_unique_inner_name(Some(&type_name), &orig_name, &known_names);
+                    let inner_name = get_unique_inner_name(&orig_name, &known_names);
                     if datir_config.print_function_signatures {
                         datir_config.log(
                             "FunctionStubs",
-                            format!("Method Stub: {:#?}::{:#?}", type_name, new_name),
+                            format!(
+                                "Generating method stub for {mod_path}::{type_key}: {:?} -> {:?}",
+                                orig_name, inner_name
+                            ),
                         );
                     }
 
-                    method_stubs.push(create_method_stub(
-                        module_path,
-                        &bare_type_name,
-                        &orig_name,
-                        &new_name,
+                    let entry = first_pass
+                        .lookup_method(mod_path, &type_key, ident.name)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "stub generation could not find a FnEntry for method \
+                                 `{type_key}::{orig_name}` in module `{mod_path}`; \
+                                 pass 1 should have populated FirstPassInfo for every \
+                                 tracked method"
+                            )
+                        });
+
+                    let mut orig_body = body.take().unwrap_or_else(|| {
+                        panic!(
+                            "method `{type_key}::{orig_name}` in module `{mod_path}` has \
+                             no body - cannot move it into the inner method"
+                        )
+                    });
+
+                    // as mentioned above, we have to qualify all associated type
+                    // usages in inputs/outputs/body of generated code
+                    if let Some(segs) = trait_segs.as_deref() {
+                        let mut qualifier = SelfPathQualifier { trait_segs: segs };
+
+                        // rewrite any usages in the method signature
+                        for param in decl.inputs.iter_mut() {
+                            qualifier.visit_ty(&mut param.ty);
+                        }
+                        if let ast::FnRetTy::Ty(ret_ty) = &mut decl.output {
+                            qualifier.visit_ty(ret_ty);
+                        }
+
+                        // rewrite any usages in the body
+                        qualifier.visit_block(&mut orig_body);
+                    }
+
+                    inner_templates.push(build_inner_method_template(
+                        &inner_name,
+                        method_generics,
                         &decl.inputs,
                         &decl.output,
-                        method_generics,
                     ));
+                    taken_bodies.push(orig_body);
 
-                    *ident = Ident::from_str(&new_name);
+                    // replace the existing method body with the stub code,
+                    // the code that creates ENTER/EXIT points, and calls
+                    // the inner function inside of it.
+                    let wrapper_src = build_method_wrapper_block(
+                        &entry.base_ppt_name,
+                        &inner_name,
+                        &decl.inputs,
+                        &decl.output,
+                    );
+                    let parsed_wrapper = common::parse_expr(psess, wrapper_src);
+                    let ast::ExprKind::Block(new_block, _) = parsed_wrapper.kind else {
+                        panic!(
+                            "wrapper-block source for method `{type_key}::{orig_name}` \
+                             did not parse as a block"
+                        );
+                    };
+                    *body = Some(new_block);
                 }
 
-                if !method_stubs.is_empty() {
-                    stub_code.push(format!(
+                if !inner_templates.is_empty() {
+                    // if we have something to add, unify every method defined in the current impl
+                    // block into another impl block with the same generics / where clause
+                    let impl_template = format!(
                         "impl{impl_generic_params} {type_name}{impl_where_clause} {{\n{}\n}}",
-                        method_stubs.join("\n\n")
-                    ));
+                        inner_templates.join("\n\n"),
+                    );
+
+                    let mut parsed_items = common::parse_items(psess, impl_template, None);
+                    let mut impl_item = parsed_items
+                        .pop()
+                        .expect("inner-impl template did not parse into an item");
+                    let ast::ItemKind::Impl(ast::Impl {
+                        items: ref mut parsed_assoc,
+                        ..
+                    }) = impl_item.kind
+                    else {
+                        panic!("inner-impl template did not yield ItemKind::Impl");
+                    };
+
+                    if parsed_assoc.len() != taken_bodies.len() {
+                        panic!(
+                            "inner-impl assoc count ({}) != taken body count ({}) for \
+                             `{type_key}` in `{mod_path}`",
+                            parsed_assoc.len(),
+                            taken_bodies.len(),
+                        );
+                    }
+
+                    for (assoc, orig_body) in parsed_assoc.iter_mut().zip(taken_bodies) {
+                        let ast::AssocItemKind::Fn(box ast::Fn {
+                            body: ref mut inner_body,
+                            ..
+                        }) = assoc.kind
+                        else {
+                            panic!("parsed inner method was not a Fn");
+                        };
+                        *inner_body = Some(orig_body);
+                    }
+
+                    // add whole impl to the current mod
+                    new_items.push(impl_item);
                 }
+            }
+
+            // Recurse into submodules, update mod path.
+            ast::ItemKind::Mod(_, mod_ident, ast::ModKind::Loaded(sub_items, _, _)) => {
+                let sub_mod_path = if mod_path.is_empty() {
+                    mod_ident.as_str().to_string()
+                } else {
+                    format!("{mod_path}::{}", mod_ident.as_str())
+                };
+                generate_stubs_in_mod(datir_config, first_pass, sub_items, &sub_mod_path, psess);
             }
 
             _ => {}
         }
     }
 
-    // actually add all the code to the crate
-    for code in stub_code {
-        // datir_config.log("TMP", format!("\n====\nMAKING: \n{code}"));
-        for item in parsing::parse_items(psess, code, None) {
-            krate.items.insert(0, item);
+    // Append inner items (inner fns + generated inherent impl blocks).
+    for new_item in new_items {
+        items.push(new_item);
+    }
+
+    // Add struct/enum SiteBind impls.
+    for code in bind_impl_code {
+        for parsed_item in parsing::parse_items(psess, code, None) {
+            items.push(parsed_item);
+        }
+    }
+
+    if !mod_path.is_empty() {
+        // if we are in a submodule / non-root file, then import root
+        // to make types available.
+        let imports = common::parse_items(psess, "use crate::*;".into(), None);
+        for import in imports {
+            items.insert(0, import);
         }
     }
 }
 
-////////////////// Helpers ///////////////////////////
+/// Creates a TypeKey for an impl block, derived from its `self_ty` and `of_trait`.
+///
+/// Returns `None` when either path can't be canonicalized.
+/// Mirrors gather_orig.rs::impl_type_key so both pass-1 and pass-2 produce identical keys.
+pub fn ast_impl_type_key(of_trait: Option<&ast::TraitRef>, self_ty: &ast::Ty) -> Option<TypeKey> {
+    let self_path = ast_ty_canonical(self_ty)?;
+    let trait_path = match of_trait {
+        Some(tr) => Some(ast_path_canonical(&tr.path)?),
+        None => None,
+    };
+    Some(match trait_path {
+        Some(t) => TypeKey::trait_impl(self_path, t),
+        None => TypeKey::inherent(self_path),
+    })
+}
 
-/// Extracts the bare name (without generic args) from a type that is a path,
-/// using the last segment's identifier (e.g., `MyStruct<A, B>` -> `MyStruct`).
-fn bare_type_name(ty: &ast::Ty) -> Option<String> {
+/// Canonical ::-joined string form of an AST path.
+/// Mirrors `gather_orig.rs::hir_path_canonical`.
+fn ast_path_canonical(path: &ast::Path) -> Option<String> {
+    let mut parts = Vec::with_capacity(path.segments.len());
+    for seg in path.segments.iter() {
+        parts.push(ast_segment_canonical(seg)?);
+    }
+    Some(parts.join("::"))
+}
+
+// Canonicalizes a single segment of a path.
+fn ast_segment_canonical(seg: &ast::PathSegment) -> Option<String> {
+    let ident = seg.ident.name.to_string();
+    let Some(args) = &seg.args else {
+        return Some(ident);
+    };
+    let ast::GenericArgs::AngleBracketed(args) = args.as_ref() else {
+        return None;
+    };
+
+    let mut rendered = Vec::new();
+    for arg in args.args.iter() {
+        let ast::AngleBracketedArg::Arg(generic_arg) = arg else {
+            return None;
+        };
+        let s = match generic_arg {
+            ast::GenericArg::Lifetime(lt) => lt.ident.name.to_string(),
+            ast::GenericArg::Type(ty) => ast_ty_canonical(ty)?,
+            ast::GenericArg::Const(_) => panic!(
+                "DATIR does not support const generic arguments in impl-block paths \
+                 (encountered in segment `{}`); see ast_segment_canonical",
+                seg.ident.name
+            ),
+        };
+        rendered.push(s);
+    }
+
+    if rendered.is_empty() {
+        Some(ident)
+    } else {
+        Some(format!("{ident}<{}>", rendered.join(",")))
+    }
+}
+
+// Canonicalizes a Path type name
+fn ast_ty_canonical(ty: &ast::Ty) -> Option<String> {
+    if matches!(ty.kind, ast::TyKind::Infer) {
+        panic!(
+            "DATIR does not support inferred (`_`) generic arguments in impl-block \
+             paths; see ast_ty_canonical"
+        );
+    }
     let ast::TyKind::Path(_, path) = &ty.kind else {
         return None;
     };
-    Some(path.segments.last()?.ident.as_str().to_string())
+    ast_path_canonical(path)
 }
 
-/// Converts the generic params to a string like `<T, U: Clone, 'a>`.
+/// Converts the generic params to a string like `<'a, T, U: Clone>`.
 /// Returns an empty string if there are no generic params.
 fn generic_params_to_string(generics: &ast::Generics) -> String {
     if generics.params.is_empty() {
@@ -232,7 +500,7 @@ fn generic_params_to_string(generics: &ast::Generics) -> String {
     format!("<{}>", params.join(", "))
 }
 
-/// Converts the generic params to a string like `<T, U, 'a>` containing only
+/// Converts the generic params to a string like `<'a, T, U>` containing only
 /// the names of each parameter (no bounds or defaults). Returns an empty
 /// string if there are no generic params.
 fn generic_args_to_string(generics: &ast::Generics) -> String {
@@ -281,64 +549,10 @@ fn where_clause_to_string(generics: &ast::Generics) -> String {
     format!(" where {}", preds.join(", "))
 }
 
-/// Finds the names of all functions that require stubs
-fn find_all_names(krate: &ast::Crate) -> KnownNames {
-    let mut known_names: KnownNames = HashMap::new();
-
-    for item in krate.items.iter() {
-        match &item.kind {
-            ast::ItemKind::Fn(box ast::Fn { ident, .. }) => {
-                known_names
-                    .entry(REGULAR_FUNCTION_NAMESPACE.to_string())
-                    .or_default()
-                    .insert(ident.as_str().to_string());
-            }
-
-            ast::ItemKind::Impl(ast::Impl { self_ty, items, .. }) => {
-                for assoc_item in items.iter() {
-                    let ast::AssocItemKind::Fn(box ast::Fn { ident, .. }) = &assoc_item.kind else {
-                        continue;
-                    };
-
-                    let self_ty = pprust::ty_to_string(self_ty);
-                    known_names
-                        .entry(self_ty)
-                        .or_default()
-                        .insert(ident.as_str().to_string());
-                }
-            }
-
-            _ => {}
-        }
-    }
-
-    known_names
-}
-
-/// Creates a unique site name based off the file the function is defined in,
-/// alongside the name of the function that this site corresponds to.
-fn qualified_site_name(module_path: &str, name: &str) -> String {
-    if module_path.is_empty() {
-        name.to_string()
-    } else {
-        format!("{module_path}.{name}")
-    }
-}
-
 /// Creates an inner name that does not clash with any other function/method
-/// defined in the file.
-fn get_unique_inner_name(
-    namespace: Option<&str>,
-    original: &str,
-    known_names: &KnownNames,
-) -> String {
-    let Some(known) = (match namespace {
-        Some(type_name) => known_names.get(type_name),
-        None => known_names.get(REGULAR_FUNCTION_NAMESPACE),
-    }) else {
-        panic!("Attempting to generate stub name given an unknown namespace: {namespace:?}");
-    };
-
+/// defined in the same `(mod_path, namespace)` slot. `known` is the set of
+/// existing fn/method names in that slot, see `FirstPassInfo::known_fn_names_in`
+fn get_unique_inner_name(original: &str, known: &std::collections::HashSet<String>) -> String {
     let mut suffix = 0;
     let mut candidate = format!("{original}{suffix}");
     while known.contains(&candidate) {
@@ -402,44 +616,109 @@ fn create_param_binds<'a>(
         .collect()
 }
 
-// ========== Stub generation ==========
+// ========== Self-path qualifier ==========
 
-/// Creates a stub for a free function using the passed in information.
+/// In-place mut visitor that rewrites every Self::X path in
+/// signature types, body expressions, and body patterns into the
+/// fully-qualified form <Self as Trait>::X.
+struct SelfPathQualifier<'a> {
+    trait_segs: &'a [ast::PathSegment],
+}
+
+impl<'a> SelfPathQualifier<'a> {
+    // rewrite a path segment, if it access an associated type via Self
+    fn maybe_rewrite(&self, qself: &mut Option<Box<ast::QSelf>>, path: &mut ast::Path) {
+        if qself.is_some() || path.segments.len() < 2 {
+            return;
+        }
+        if path.segments[0].ident.name != kw::SelfUpper {
+            return;
+        }
+
+        let tail: thin_vec::ThinVec<ast::PathSegment> =
+            path.segments.iter().skip(1).cloned().collect();
+
+        let mut new_segs: thin_vec::ThinVec<ast::PathSegment> =
+            self.trait_segs.iter().cloned().collect();
+
+        let position = new_segs.len();
+        new_segs.extend(tail);
+        path.segments = new_segs;
+
+        let self_ty = Box::new(ast::Ty {
+            id: ast::DUMMY_NODE_ID,
+            kind: ast::TyKind::Path(
+                None,
+                ast::Path {
+                    span: rustc_span::DUMMY_SP,
+                    segments: thin_vec::thin_vec![ast::PathSegment {
+                        ident: rustc_span::Ident::with_dummy_span(kw::SelfUpper),
+                        id: ast::DUMMY_NODE_ID,
+                        args: None,
+                    }],
+                    tokens: None,
+                },
+            ),
+            span: rustc_span::DUMMY_SP,
+            tokens: None,
+        });
+        *qself = Some(Box::new(ast::QSelf {
+            ty: self_ty,
+            path_span: rustc_span::DUMMY_SP,
+            position,
+        }));
+    }
+}
+
+/// Self paths could be in types, expressions, or patterns.
+/// Make sure to visit all of them.
+impl<'a> MutVisitor for SelfPathQualifier<'a> {
+    fn visit_ty(&mut self, ty: &mut ast::Ty) {
+        if let ast::TyKind::Path(qself, path) = &mut ty.kind {
+            self.maybe_rewrite(qself, path);
+        }
+        mut_visit::walk_ty(self, ty);
+    }
+
+    fn visit_expr(&mut self, expr: &mut ast::Expr) {
+        if let ast::ExprKind::Path(qself, path) = &mut expr.kind {
+            self.maybe_rewrite(qself, path);
+        }
+        mut_visit::walk_expr(self, expr);
+    }
+
+    fn visit_pat(&mut self, pat: &mut ast::Pat) {
+        if let ast::PatKind::Path(qself, path) = &mut pat.kind {
+            self.maybe_rewrite(qself, path);
+        }
+        mut_visit::walk_pat(self, pat);
+    }
+}
+
+////////////////////// Wrapper / Inner Builders //////////////////////////
+
+/// Body for a free fn's wrapper. The wrapper opens an
+/// ENTER site with each input bound, calls `inner_name(args)`, then opens
+/// an EXIT site with the return bound. This block should replace the user fn's
+/// body. Fn visibility and calling-convention attrs are intentionally unchanged.
 ///
-/// A function stub will create an ENTER site, with each input parameter bound to it, and
-/// an EXIT site with each input parameter and the return value bound. Between these two
-/// sites, the corresponding inner function is invoked. Importantly, the stub has the
-/// same original name of the inner function, which means any invocation of that function
-/// will now invoke this stub instead.
-///
-/// Abstract Type information about the inputs and outputs is reported at these locations.
-fn create_fn_stub(
+/// Special-cased for fn_name == "main", no param binds,
+/// no return value to bind, and the analysis report is produced at the end.
+fn build_fn_wrapper_block(
     config: &DatirConfig,
-    module_path: &str,
+    base_ppt_name: &str,
     fn_name: &str,
     inner_name: &str,
     inputs: &[ast::Param],
     output: &ast::FnRetTy,
-    generics: &ast::Generics,
 ) -> String {
-    let site_name = qualified_site_name(module_path, fn_name);
-    let generic_params = generic_params_to_string(generics);
-    let where_clause = where_clause_to_string(generics);
-
-    let (declared_params, passed_params): (Vec<String>, Vec<String>) = inputs
+    let passed = inputs
         .iter()
-        .map(|param| {
-            let name = get_param_name(param);
-            let ptype = pprust::ty_to_string(&param.ty);
-            (format!("{name}: {ptype}"), name.to_string())
-        })
-        .unzip();
-
-    let declared = declared_params.join(", ");
-    let passed = passed_params.join(", ");
-    let all_params = inputs.iter();
-    let enter_binds = create_param_binds("site_enter", all_params.clone()).join("\n");
-    let exit_binds = create_param_binds("site_exit", all_params).join("\n");
+        .map(get_param_name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let enter_binds = create_param_binds("site_enter", inputs.iter()).join("\n");
+    let exit_binds = create_param_binds("site_exit", inputs.iter()).join("\n");
 
     if fn_name == "main" {
         let report_fmt = if let Some(output_file_name) = &config.output_decls_format {
@@ -448,127 +727,87 @@ fn create_fn_stub(
             "report()".to_string()
         };
 
-        // FIXME: environment stuff for main
         return format!(
-            r#"
-            pub fn main() {{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::ENTER");
+            r#"{{
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::EXIT");
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
                 ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
                 {inner_name}();
 
                 ATI_ANALYSIS.lock().unwrap().{report_fmt};
-            }}
-        "#
+            }}"#
         );
     }
 
     match output {
-        ast::FnRetTy::Ty(ret_ty) => {
-            let ret = pprust::ty_to_string(ret_ty);
-            format!(
-                r#"
-                pub fn {fn_name}{generic_params}({declared}) -> {ret}{where_clause} {{
-                    let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::ENTER");
-                    {enter_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
+        ast::FnRetTy::Ty(_) => format!(
+            r#"{{
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                {enter_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::EXIT");
-                    {exit_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                {exit_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    let res = {inner_name}({passed});
+                let res = {inner_name}({passed});
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::EXIT");
-                    res.bind(&mut site_exit, "RET");
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                res.bind(&mut site_exit, "{RETURN_VAR_NAME}");
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    return res;
-                }}
-            "#
-            )
-        }
-        ast::FnRetTy::Default(_) => {
-            format!(
-                r#"
-                pub fn {fn_name}{generic_params}({declared}){where_clause} {{
-                    let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::ENTER");
-                    {enter_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
+                return res;
+            }}"#
+        ),
+        ast::FnRetTy::Default(_) => format!(
+            r#"{{
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                {enter_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::EXIT");
-                    {exit_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                {exit_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    {inner_name}({passed});
+                {inner_name}({passed});
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{site_name}:::EXIT");
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-                }}
-            "#
-            )
-        }
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+            }}"#
+        ),
     }
 }
 
-/// Similar to create_fn_stub, this function instead creates a stub for a method defined on some
-/// type. See `create_fn_stub` for more information.
-fn create_method_stub(
-    module_path: &str,
-    type_name: &str,
-    method_name: &str,
+/// Similar to `build_fn_wrapper_block` but for methods.
+/// A small difference: the self parameter needs to be correctly
+/// used when invoking the inner function
+fn build_method_wrapper_block(
+    base_ppt_name: &str,
     inner_name: &str,
-    all_inputs: &[ast::Param],
+    inputs: &[ast::Param],
     output: &ast::FnRetTy,
-    generics: &ast::Generics,
 ) -> String {
-    let qualified_name = qualified_site_name(module_path, &format!("{type_name}.{method_name}"));
-    let generic_params = generic_params_to_string(generics);
-    let where_clause = where_clause_to_string(generics);
+    let receiver = determine_receiver_kind(inputs);
 
-    let receiver = determine_receiver_kind(all_inputs);
+    let mut inputs_iter = inputs.iter();
+    if !matches!(receiver, ReceiverKind::None) {
+        inputs_iter.next();
+    }
+    let non_self: Vec<&ast::Param> = inputs_iter.collect();
 
-    let mut non_self_inputs = all_inputs.iter();
-    let receiver_decl = match receiver {
-        ReceiverKind::None => "",
-        ReceiverKind::Value => {
-            non_self_inputs.next();
-            "self"
-        }
-        ReceiverKind::Ref => {
-            non_self_inputs.next();
-            "&self"
-        }
-        ReceiverKind::RefMut => {
-            non_self_inputs.next();
-            "&mut self"
-        }
-    };
-
-    let (other_declared, other_passed): (Vec<String>, Vec<String>) = non_self_inputs
-        .clone()
-        .map(|param| {
-            let name = get_param_name(param);
-            let ptype = pprust::ty_to_string(&param.ty);
-            (format!("{name}: {ptype}"), name.to_string())
-        })
-        .unzip();
-
-    // as input paramsinclude optional self parameter, followed by all declared parameters
-    let declared_params = match (receiver_decl.is_empty(), other_declared.is_empty()) {
-        (true, _) => other_declared.join(", "),
-        (false, true) => receiver_decl.to_string(),
-        (false, false) => format!("{receiver_decl}, {}", other_declared.join(", ")),
-    };
-
-    let passed_params = other_passed.join(", ");
+    let passed = non_self
+        .iter()
+        .copied()
+        .map(get_param_name)
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let call_expr = match receiver {
-        ReceiverKind::None => format!("Self::{inner_name}({passed_params})"),
-        _ => format!("self.{inner_name}({passed_params})"),
+        ReceiverKind::None => format!("Self::{inner_name}({passed})"),
+        _ => format!("self.{inner_name}({passed})"),
     };
 
     let self_bind = |site_name: &str| -> String {
@@ -581,66 +820,130 @@ fn create_method_stub(
         }
     };
 
-    let enter_binds = [self_bind("site_enter")]
-        .into_iter()
-        .chain(create_param_binds("site_enter", non_self_inputs.clone()))
+    let enter_binds = std::iter::once(self_bind("site_enter"))
+        .chain(create_param_binds("site_enter", non_self.iter().copied()))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
 
-    let exit_binds = [self_bind("site_exit")]
-        .into_iter()
-        .chain(create_param_binds("site_exit", non_self_inputs))
+    let exit_binds = std::iter::once(self_bind("site_exit"))
+        .chain(create_param_binds("site_exit", non_self.iter().copied()))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
 
     match output {
-        ast::FnRetTy::Ty(ret_ty) => {
-            let ret = pprust::ty_to_string(ret_ty);
-            format!(
-                r#"
-                pub fn {method_name}{generic_params}({declared_params}) -> {ret}{where_clause} {{
-                    let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::ENTER");
-                    {enter_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
+        ast::FnRetTy::Ty(_) => format!(
+            r#"{{
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                {enter_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::EXIT");
-                    {exit_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                {exit_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    let res = {call_expr};
+                let res = {call_expr};
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::EXIT");
-                    res.bind(&mut site_exit, "RET");
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                res.bind(&mut site_exit, "{RETURN_VAR_NAME}");
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    return res;
-                }}
-                "#
-            )
-        }
-        ast::FnRetTy::Default(_) => {
-            format!(
-                r#"
-                pub fn {method_name}{generic_params}({declared_params}){where_clause} {{
-                    let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::ENTER");
-                    {enter_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
+                return res;
+            }}"#
+        ),
+        ast::FnRetTy::Default(_) => format!(
+            r#"{{
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                {enter_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::EXIT");
-                    {exit_binds}
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                {exit_binds}
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
-                    {call_expr};
+                {call_expr};
 
-                    let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{qualified_name}:::EXIT");
-                    ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-                }}
-                "#
-            )
-        }
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
+            }}"#
+        ),
     }
+}
+
+/// Source for an inner free function, the signature with an empty placeholder
+/// body. The caller parses this template, then transplants the user's
+/// original body.
+fn build_inner_fn_template(
+    inner_name: &str,
+    generics: &ast::Generics,
+    inputs: &[ast::Param],
+    output: &ast::FnRetTy,
+) -> String {
+    let generic_params = generic_params_to_string(generics);
+    let where_clause = where_clause_to_string(generics);
+    let declared = inputs
+        .iter()
+        .map(|p| {
+            // if p was a mutable ref, we had to make sure the emitted
+            // formal is declared to be a mut binding... p was translated to
+            // be a TaggedRefMut in this case... But also any struct that carried a mut ref
+            // also needs to allow mutable access!! just make everything mutable?
+            // FIXME: i honestly think this system sucks. not sure how to avoid it
+            // without changing the ref (specifically mut ref) implementation again...
+            format!("mut {}: {}", get_param_name(p), pprust::ty_to_string(&p.ty))
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ret = match output {
+        ast::FnRetTy::Ty(t) => format!(" -> {}", pprust::ty_to_string(t)),
+        ast::FnRetTy::Default(_) => String::new(),
+    };
+    format!("fn {inner_name}{generic_params}({declared}){ret}{where_clause} {{ }}")
+}
+
+/// Very similar to `build_inner_fn_template`, but for methods.
+fn build_inner_method_template(
+    inner_name: &str,
+    method_generics: &ast::Generics,
+    inputs: &[ast::Param],
+    output: &ast::FnRetTy,
+) -> String {
+    let generic_params = generic_params_to_string(method_generics);
+    let where_clause = where_clause_to_string(method_generics);
+
+    let receiver = determine_receiver_kind(inputs);
+    let mut iter = inputs.iter();
+    let receiver_str = match receiver {
+        ReceiverKind::None => "",
+        ReceiverKind::Value => {
+            iter.next();
+            "self"
+        }
+        ReceiverKind::Ref => {
+            iter.next();
+            "&self"
+        }
+        ReceiverKind::RefMut => {
+            iter.next();
+            "&mut self"
+        }
+    };
+    let other =
+        iter // FIXME: if the above FIXME is addressed, this also needs to change
+            .map(|p| format!("mut {}: {}", get_param_name(p), pprust::ty_to_string(&p.ty)))
+            .collect::<Vec<_>>()
+            .join(", ");
+    let declared = match (receiver_str.is_empty(), other.is_empty()) {
+        (true, _) => other,
+        (false, true) => receiver_str.to_string(),
+        (false, false) => format!("{receiver_str}, {other}"),
+    };
+    let ret = match output {
+        ast::FnRetTy::Ty(t) => format!(" -> {}", pprust::ty_to_string(t)),
+        ast::FnRetTy::Default(_) => String::new(),
+    };
+    format!("fn {inner_name}{generic_params}({declared}){ret}{where_clause} {{ }}")
 }
 
 /// Implements the BindToSite trait (defined in the runtime library) on some struct.

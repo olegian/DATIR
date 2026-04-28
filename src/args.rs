@@ -215,7 +215,9 @@ impl ArgParser {
                         let value = iter.next().ok_or_else(|| ArgError::MissingValue(arg))?;
                         parsed.values.insert(spec.name, value);
                     }
-                    ArgKind::Positional => { unreachable!(); }
+                    ArgKind::Positional => {
+                        unreachable!();
+                    }
                 }
             } else {
                 let spec = self
@@ -280,11 +282,7 @@ impl ArgParser {
 
         // Options section.
         out.push_str("Options:\n");
-        for s in self
-            .specs
-            .iter()
-            .filter(|s| s.kind != ArgKind::Positional)
-        {
+        for s in self.specs.iter().filter(|s| s.kind != ArgKind::Positional) {
             let mut left = String::new();
             if let Some(short) = s.short {
                 left.push_str(short);

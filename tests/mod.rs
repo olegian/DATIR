@@ -6,28 +6,29 @@ mod loops;
 mod type_params;
 
 // test suite
+mod all_assign_operators;
+mod all_binary_operators;
 mod array;
 mod array_high_dim;
 mod array_with_slices;
+mod assign_compound;
+mod assign_tuples;
+mod binary_search;
+mod generic_struct;
+mod longest_increasing_subsequence;
 mod multi_file;
+mod multi_file_with_submodules;
 mod nested_returns;
+mod op_through_trait;
+mod ranges;
+mod references;
 mod simple;
 mod type_hints;
+mod unary_operators;
 mod untracked_fns;
 mod uses_enum;
 mod uses_methods;
 mod uses_struct;
-mod all_binary_operators;
-mod all_assign_operators;
-mod assign_tuples;
-mod generic_struct;
-mod unary_operators;
-mod ranges;
-mod binary_search;
-mod longest_increasing_subsequence;
-mod op_through_trait;
-mod assign_compound;
-mod references;
 
 // FIXME: It's kind of annoying that `cargo test` ends up showing this
 // file in the output, but I honestly didn't like any of the quick solutions

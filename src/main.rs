@@ -9,7 +9,6 @@
 #![feature(box_patterns)]
 #![feature(min_specialization)]
 #![feature(step_trait)]
-#![feature(new_range_api)]
 #![feature(unsize)]
 #![feature(coerce_unsized)]
 
@@ -24,6 +23,7 @@ extern crate rustc_parse;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate smallvec;
+extern crate thin_vec;
 
 use std::{env, sync::Arc};
 
@@ -74,48 +74,89 @@ pub fn main() {
     )
     .arg(
         ArgSpec::flag(
+            "gen-decls",
+            "--gen-decls",
+            "Generate a .decls file for the crate being instrumented.",
+        )
+        .short("-d"),
+    )
+    .arg(
+        ArgSpec::keyword(
+            "rec-depth",
+            "If gen-decls is specified, optionally specifies the depth to which to recursively expand types of values at program points",
+        )
+        .short("-rd")
+        .long("--rec-depth")
+        .value_name("INT_DEPTH"),
+    )
+    .arg(
+        ArgSpec::flag(
             "test",
             "--test",
             "Run in test mode, skipping debug logging, and using regular print ATI output",
         )
-        .short("-r"),
     );
 
     let args = parser.parse_env();
-
 
     let file_path = args
         .get_value("file")
         .expect("parser guarantees `file` is present")
         .to_string();
 
-
-    let config = if args.is_present("release") {
-        let output = std::path::Path::new(&file_path).with_extension("decls");
-        Arc::new(DatirConfig::release(output))
+    let mut config = if args.is_present("release") {
+        let output = std::path::Path::new(&file_path).with_extension("ati");
+        DatirConfig::release(output)
     } else if args.is_present("test") {
-        Arc::new(DatirConfig::test())
+        DatirConfig::test()
     } else {
-        Arc::new(DatirConfig::debug())
+        DatirConfig::debug()
     };
+
+    let input_path = std::path::PathBuf::from(&file_path);
+    // FIXME: it could be worth it to always generate a minimal decls with rec depth 0, just to have ppt names
+    // to check against. we require that the source files are present already to be able to instrument
+    // anything after all. Rethink what flags are exposed.
+    config.decls_file = args.is_present("gen-decls").then(|| {
+        let depth = args.get_value("rec-depth").map(|depth| {
+            depth
+                .parse::<usize>()
+                .expect("Unable to interpret rec-depth as an integer.")
+        });
+
+        DeclsFile::from_source_file(&input_path, depth)
+    });
 
     let mut compiler_args = vec![program, file_path];
     if let Some(output) = args.get_value("output") {
-        compiler_args.push(format!("-o{output}"))
+        compiler_args.push(format!("-o{output}"));
     }
 
-    // This is awesome.
-    // DeclsFile::from_source_file(crate_root_file);
+    config.log("Config", format!("{:#?}", config));
 
     // The gather compilation
     // panics on compilation failure, therefore by the time the instrument
     // compilation starts, we know we are working with a semantically correct rust program
+    let config = Arc::new(config);
     let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
     rustc_driver::run_compiler(&compiler_args, &mut gather_info);
     let first_pass = gather_info.into_first_pass_info();
 
     // The instrument compilation
-    let mut cbs =
-        callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(first_pass, config);
+    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(
+        first_pass,
+        config.clone(),
+    );
     rustc_driver::run_compiler(&compiler_args, &mut cbs);
+
+    if args.is_present("gen-decls") {
+        // output the decls file
+        config
+            .as_ref()
+            .decls_file
+            .as_ref()
+            .expect("generated a decls file, but then was unable to find it for writing.")
+            .write_to_file(&input_path.with_extension("decls"))
+            .expect("unable to write decls file to disk");
+    }
 }

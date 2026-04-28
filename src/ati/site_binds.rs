@@ -42,7 +42,7 @@ impl<'a, T: ?Sized> SiteBind for TaggedRefMut<'a, T> {
 }
 
 // Non-instrumented references to a SiteBind type delegate to their referent.
-// The outer `&` / `&mut` carries no Id of its own — it's a raw Rust reference
+// The outer `&` / `&mut` carries no Id of its own, it's a raw Rust reference
 // kept because pass 2 only converts the innermost `&` in a chain to a
 // `TaggedRef`. For nested shapes like `&&TaggedRef<u32>` (from source `&&&u32`),
 // these impls unwrap each outer layer until a `Tagged` / `TaggedRef` /
@@ -61,12 +61,12 @@ impl<T> SiteBind for &mut T {
 // ==========================    ARRAY TYPES   ===============================
 
 /// Binding an array should associate the length and values inside the array.
-/// References to these arrays share the same recursive treatment — the
+/// References to these arrays share the same recursive treatment, the
 /// TaggedRef-over-array specialization walks each element via the
-/// TaggedRef<..>-over-element impls that follow.
+/// TaggedRef<..> -over-element impls that follow.
 impl<T, const N: usize> SiteBind for TaggedArray<T, N> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
+        site.bind(&format!("{var_name}.length"), self.len().0);
         for i in 0..N {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
@@ -74,7 +74,7 @@ impl<T, const N: usize> SiteBind for TaggedArray<T, N> {
 }
 impl<'a, T, const N: usize> SiteBind for TaggedRef<'a, [T; N]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), *self.0);
+        site.bind(&format!("{var_name}.length"), *self.0);
         for i in 0..N {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
@@ -82,7 +82,7 @@ impl<'a, T, const N: usize> SiteBind for TaggedRef<'a, [T; N]> {
 }
 impl<'a, T, const N: usize> SiteBind for TaggedRefMut<'a, [T; N]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), *self.0);
+        site.bind(&format!("{var_name}.length"), *self.0);
         for i in 0..N {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
@@ -91,12 +91,12 @@ impl<'a, T, const N: usize> SiteBind for TaggedRefMut<'a, [T; N]> {
 
 // ==========================    SLICE TYPES   ===============================
 
-/// Slices are `TaggedRef<'_, [T]>` / `TaggedRefMut<'_, [T]>` — the source-level
+/// Slices are repred as `TaggedRef<'_, [T]>` / `TaggedRefMut<'_, [T]>`. The source-level
 /// `&[T]` / `&mut [T]` is absorbed into the wrapper via unsized coercion from
 /// `TaggedRef<'_, [T; N]>`. Each element is recursively bound.
 impl<'a, T> SiteBind for TaggedRef<'a, [T]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
+        site.bind(&format!("{var_name}.length"), self.len().0);
         for i in 0..self.1.len() {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }
@@ -104,7 +104,7 @@ impl<'a, T> SiteBind for TaggedRef<'a, [T]> {
 }
 impl<'a, T> SiteBind for TaggedRefMut<'a, [T]> {
     fn bind(&self, site: &mut Site, var_name: &str) {
-        site.bind(&format!("{var_name}_LEN"), self.len().0);
+        site.bind(&format!("{var_name}.length"), self.len().0);
         for i in 0..self.1.len() {
             self.1[i].bind(site, &format!("{var_name}[{i}]"));
         }

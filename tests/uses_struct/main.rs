@@ -23,7 +23,6 @@ fn main() {
     let z2 = 1.0;
     func(s, 10, 20, 30, z2);
 
-
     let a = struct_defs::Struct {
         a: 0,
         b: false,
@@ -72,10 +71,7 @@ fn bar(mut a: struct_defs::TupleStruct, b: struct_defs::Struct) -> struct_defs::
     a
 }
 
-// TODO: this mut is visious,
-// its unnecessary with normal rustc, but with DATIR is required
-// due to the way .assign captures &mut self
-fn baz(mut a: struct_defs::ContainsRef, v: i64) {
+fn baz(a: struct_defs::ContainsRef, v: i64) {
     let tmp = a.a + v;
     let tmp2 = **a.d + v;
     *a.c = tmp + tmp2;

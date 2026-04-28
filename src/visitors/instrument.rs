@@ -11,6 +11,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::common::{self, CanBeTupled, DatirConfig};
 use crate::types::ati_info::FirstPassInfo;
+use crate::visitors::stubs::ast_impl_type_key;
 
 /// Enumerates the different types of operations that can be observed.
 enum OpKind {
@@ -24,8 +25,11 @@ pub struct TransformVisitor<'a> {
     first_pass: &'a FirstPassInfo,
     psess: &'a ParseSess,
     /// Unique suffix for synthesized `__ati_hoist_N` locals produced by the
-    /// let-hoist pass. Shared across the whole crate traversal.
+    /// let-hoist pass. Shared across the whole crate traversal (probably unnecessarily
+    /// but just to be confident in avoiding name collisions)
     hoist_counter: u32,
+    /// ::-joined module path of the item currently being visited
+    current_mod_path: String,
 }
 
 impl<'a> MutVisitor for TransformVisitor<'a> {
@@ -262,7 +266,12 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 body,
                 ..
             }) => {
-                if !self.first_pass.is_fn_ident_tracked(ident) {
+                // Skip free fns that pass 1 didn't observe
+                if self
+                    .first_pass
+                    .lookup_free_fn(&self.current_mod_path, ident.name)
+                    .is_none()
+                {
                     return;
                 }
 
@@ -326,7 +335,23 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
             }
 
             // Instrument all methods
-            ast::ItemKind::Impl(ast::Impl { items, .. }) => {
+            ast::ItemKind::Impl(ast::Impl {
+                of_trait,
+                self_ty,
+                items,
+                ..
+            }) => {
+                let type_key =
+                    ast_impl_type_key(of_trait.as_deref().map(|h| &h.trait_ref), self_ty)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "instrumentation could not derive TypeKey from impl self-type \
+                                 `{}` in module `{}`; only path self/trait types are supported",
+                                pprust::ty_to_string(self_ty),
+                                self.current_mod_path,
+                            )
+                        });
+
                 for assoc_item in items.iter_mut() {
                     let ast::AssocItemKind::Fn(box ast::Fn {
                         ident,
@@ -338,7 +363,12 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                         continue;
                     };
 
-                    if !self.first_pass.is_fn_ident_tracked(ident) {
+                    // skip methods pass 1 didn't observe
+                    if self
+                        .first_pass
+                        .lookup_method(&self.current_mod_path, &type_key, ident.name)
+                        .is_none()
+                    {
                         continue;
                     }
 
@@ -361,23 +391,43 @@ impl<'a> MutVisitor for TransformVisitor<'a> {
                 }
             }
 
+            // Mutate current_mod_path in place, we use it for each fn lookup
+            // in FirstPassInfo, and reconstructing it from a vec of segments
+            // will probably be wasteful.
+            ast::ItemKind::Mod(_, mod_ident, ast::ModKind::Loaded(sub_items, _, _)) => {
+                let saved_len = self.current_mod_path.len();
+                if !self.current_mod_path.is_empty() {
+                    self.current_mod_path.push_str("::");
+                }
+                self.current_mod_path.push_str(mod_ident.as_str());
+
+                // instrument each item
+                for sub in sub_items.iter_mut() {
+                    self.visit_item(sub);
+                }
+
+                self.current_mod_path.truncate(saved_len);
+            }
+
             _ => {}
         }
     }
 }
 
 impl<'a> TransformVisitor<'a> {
-    /// Consutrctor
+    /// Constructor.
     pub fn new(
         datir_config: &'a DatirConfig,
         first_pass: &'a FirstPassInfo,
         psess: &'a ParseSess,
+        module_path: &str,
     ) -> Self {
         Self {
             datir_config,
             first_pass,
             psess,
             hoist_counter: 0,
+            current_mod_path: module_path.to_string(),
         }
     }
 
@@ -828,7 +878,10 @@ impl<'a> TransformVisitor<'a> {
             // a pointer. If we hit one anyway, tuple the element and leave the
             // outer shape alone rather than panicking?
             rustc_ast::TyKind::Slice(inner_ty) => {
-                self.datir_config.log("Warning", format!("Found a slice type not behind a reference!"));
+                self.datir_config.log(
+                    "Warning",
+                    format!("Found a slice type not behind a reference!"),
+                );
                 self.recursively_tuple_type(inner_ty);
             }
 

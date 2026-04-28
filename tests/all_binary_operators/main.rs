@@ -61,7 +61,7 @@ fn rem(x: u32, y: u32, z: u32) -> u32 {
     return x % y;
 }
 fn and(x: bool, y: bool, z: bool) -> bool {
-    return x && y
+    return x && y;
 }
 fn or(x: bool, y: bool, z: bool) -> bool {
     return x || y;

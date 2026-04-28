@@ -97,22 +97,22 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                 }
             }
 
-            // we are taking a reference to some sort of expression. If the 
+            // we are taking a reference to some sort of expression. If the
             // reference is to some type which is tuplable (e.g. &u32, or &mut &f64)
             // then during instrumentation we need to create a TaggedRef<T> from the Tagged<T>.
             // Store this location, to perform the transformation in the next pass.
             //
             // A TaggedRef(Mut?)<T> == (&(mut?) Id, &(mut?) T). Nested references will only
             // turn the innermost reference into a TaggedRef. In other words, for some tuplable T,
-            // &&&T becomes &&&Tagged<T> which becomes &&TaggedRef<T>, to avoid dragging around an 
-            // owned Id. If T is a not a tuplable type (i.e. a user-defined compound type), then 
+            // &&&T becomes &&&Tagged<T> which becomes &&TaggedRef<T>, to avoid dragging around an
+            // owned Id. If T is a not a tuplable type (i.e. a user-defined compound type), then
             // &T remains &T.
             hir::ExprKind::AddrOf(_, _, inner) => {
                 let ldid = expr.hir_id.owner.def_id;
                 let typeck = self.tcx.typeck(ldid);
 
-                // This is no longer necessary, as we utilize the coerce_unsized and unsize 
-                // features, to allow a TaggedRef<[T; N]> to automatically coerce to a 
+                // This is no longer necessary, as we utilize the coerce_unsized and unsize
+                // features, to allow a TaggedRef<[T; N]> to automatically coerce to a
                 // TaggedRef<[T]>.
                 // let adjustments = typeck.expr_adjustments(expr);
                 // if adjustments.iter().any(|adjustment| {
@@ -150,7 +150,7 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
             // Assignment (or compound assign) whose LHS is *expr where expr
             // is &mut T with tupleable T. Post-instrumentation the LHS is a
             // TaggedRefMut<T>; a plain *lhs = rhs goes through DerefMut and
-            // only touches the value field (.1), leaving the old id (.0) behind. 
+            // only touches the value field (.1), leaving the old id (.0) behind.
             // Record the span so pass 2 rewrites it to expr.assign(rhs), which writes both fields.
             // .assign is defined in the runtime library, on the TaggedRefMut type.
             hir::ExprKind::Assign(lhs, _, _) | hir::ExprKind::AssignOp(_, lhs, _) => {
@@ -160,22 +160,27 @@ impl<'tcx, 'a> Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
                     let inner_ty = typeck.expr_ty(inner);
                     if let rustc_middle::ty::Ref(_, referent, mutbl) = *inner_ty.kind() {
                         if mutbl.is_mut() && referent.can_be_tupled() {
-                            self.first_pass.observe_assign_through_tagged_ref_mut(expr.span);
+                            self.first_pass
+                                .observe_assign_through_tagged_ref_mut(expr.span);
                         }
                     }
                 }
             }
 
-            // Indexing is usually handled via traits defined on the Tagged* types in the 
-            // runtime library. Ranges are special cased however, and SliceIndex cannot be 
-            // overloaded in the way that the Index operation can. Therefore, we have to 
+            // Indexing is usually handled via traits defined on the Tagged* types in the
+            // runtime library. Ranges are special cased however, and SliceIndex cannot be
+            // overloaded in the way that the Index operation can. Therefore, we have to
             // record places where a range is used as an index, to correctly transform it
             // to the appropriate subslice operation in the next pass.
             hir::ExprKind::Index(_, idx, _) => {
                 let ldid = expr.hir_id.owner.def_id;
                 let typeck = self.tcx.typeck(ldid);
                 let idx_ty = typeck.expr_ty(idx);
-                if idx_ty.ty_adt_def().map(|adt| is_range_lang_item(self.tcx, adt.did())).unwrap_or(false) {
+                if idx_ty
+                    .ty_adt_def()
+                    .map(|adt| is_range_lang_item(self.tcx, adt.did()))
+                    .unwrap_or(false)
+                {
                     self.first_pass.observe_index_by_range(expr.span);
                 }
             }

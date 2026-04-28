@@ -5,7 +5,7 @@ fn main() {
     // will merge together a, b
     let a = if_expr(20, 1, 2, 3, 4);
     // will merge together a, d
-    let b = if_expr(2,  1, 2, 3, 4);
+    let b = if_expr(2, 1, 2, 3, 4);
 
     while_expr(5, 0, 99);
     loop_expr(5, 0, 99);
@@ -14,7 +14,7 @@ fn main() {
 fn if_expr(branch: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
     if (branch > 10) {
         a + b
-    } else if { branch > 5} {
+    } else if { branch > 5 } {
         a + c
     } else {
         a + d

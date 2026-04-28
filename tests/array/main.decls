@@ -1,62 +1,256 @@
-ppt bar:::ENTER
+decl-version 2.0
+input-language rust
+var-comparability implicit
+
+ppt tests/array/main.rs::bar:::ENTER
 ppt-type enter
+variable arr
+  var-kind variable
+  dec-type [usize]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
 variable arr[..]
-  comparability 8
-variable arr_LEN
-  comparability 11
+  var-kind array
+  dec-type usize
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
 variable unused
-  comparability 12
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 variable y
-  comparability 13
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 variable z
-  comparability 14
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 
-ppt bar:::EXIT
+ppt tests/array/main.rs::bar:::EXIT
 ppt-type exit
-variable RET
-  comparability 8
+parent enter-exit tests/array/main.rs::bar:::ENTER 4
+variable arr
+  var-kind variable
+  dec-type [usize]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
 variable arr[..]
-  comparability 8
-variable arr_LEN
-  comparability 11
+  var-kind array
+  dec-type usize
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
+variable return
+  var-kind return
+  dec-type usize
+  rep-type int
+  comparability -1
 variable unused
-  comparability 12
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 variable y
-  comparability 14
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 variable z
-  comparability 14
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 
-ppt foo:::ENTER
-ppt-type enter
+ppt tests/array/main.rs::bar:::EXIT20
+ppt-type subexit
+parent exit-exitnn tests/array/main.rs::bar:::EXIT 5
+variable arr
+  var-kind variable
+  dec-type [usize]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
 variable arr[..]
-  comparability 0
-variable arr_LEN
-  comparability 1
+  var-kind array
+  dec-type usize
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
+variable return
+  var-kind return
+  dec-type usize
+  rep-type int
+  comparability -1
 variable unused
-  comparability 4
-variable x
-  comparability 2
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 variable y
-  comparability 3
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
+variable z
+  var-kind variable
+  dec-type usize
+  rep-type int
+  comparability -1
 
-ppt foo:::EXIT
-ppt-type exit
-variable RET
-  comparability 3
+ppt tests/array/main.rs::foo:::ENTER
+ppt-type enter
+variable arr
+  var-kind variable
+  dec-type [u32; 3]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
 variable arr[..]
-  comparability 0
-variable arr_LEN
-  comparability 1
+  var-kind array
+  dec-type u32
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
 variable unused
-  comparability 4
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
 variable x
-  comparability 3
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
 variable y
-  comparability 3
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
 
-ppt main:::ENTER
+ppt tests/array/main.rs::foo:::EXIT
+ppt-type exit
+parent enter-exit tests/array/main.rs::foo:::ENTER 2
+variable arr
+  var-kind variable
+  dec-type [u32; 3]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
+variable arr[..]
+  var-kind array
+  dec-type u32
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
+variable return
+  var-kind return
+  dec-type u32
+  rep-type int
+  comparability -1
+variable unused
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+variable x
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+variable y
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+
+ppt tests/array/main.rs::foo:::EXIT13
+ppt-type subexit
+parent exit-exitnn tests/array/main.rs::foo:::EXIT 3
+variable arr
+  var-kind variable
+  dec-type [u32; 3]
+  rep-type hashcode
+  comparability -1
+variable arr.length
+  var-kind field length
+  dec-type usize
+  rep-type int
+  enclosing-var arr
+  comparability -1
+variable arr[..]
+  var-kind array
+  dec-type u32
+  rep-type int[]
+  enclosing-var arr
+  array 1
+  comparability -1
+variable return
+  var-kind return
+  dec-type u32
+  rep-type int
+  comparability -1
+variable unused
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+variable x
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+variable y
+  var-kind variable
+  dec-type u32
+  rep-type int
+  comparability -1
+
+ppt tests/array/main.rs::main:::ENTER
 ppt-type enter
 
-ppt main:::EXIT
+ppt tests/array/main.rs::main:::EXIT
 ppt-type exit
+parent enter-exit tests/array/main.rs::main:::ENTER 0
+
+ppt tests/array/main.rs::main:::EXIT1
+ppt-type subexit
+parent exit-exitnn tests/array/main.rs::main:::EXIT 1
+
 

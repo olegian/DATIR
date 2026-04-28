@@ -7,8 +7,8 @@ use std::{
 /// Helpful iterators for constructing array outputs.
 /// Accepts a slice of lengths, dims, and offers the cartesian product
 /// over all dims.
-/// 
-/// e.g. using dims= [1, 2, 3] 
+///
+/// e.g. using dims= [1, 2, 3]
 /// will offer up:
 ///   [0, 0, 0],
 ///   [0, 0, 1],
@@ -64,6 +64,13 @@ const ANALYSIS_START: &'static str = "===ATI-ANALYSIS-START===\n";
 
 /// Delimiter used in ATI information between different sites
 const SITE_DELIM: &'static str = "---\n";
+
+/// Helper, pass in "/simple/main.rs:::ENTER" to construct:
+/// /path/from/root_dir/datir/tests/simple/main.rs
+pub fn prefix_with_path_from_root(site_from_tests: &str) -> String {
+    let prefix = std::env::current_dir().unwrap();
+    format!("{}/tests/{site_from_tests}", prefix.display())
+}
 
 /// Compiles `{cwd}/{test_dir}/{file_name}.rs` with the added instrumentation
 /// runs it, and returns the section of the stdout stream which contains the ATI info.
@@ -183,9 +190,9 @@ pub struct ExpectedSite {
 }
 
 impl ExpectedSite {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
-            name: String::from(name),
+            name,
             partition: HashMap::new(),
         }
     }
@@ -210,7 +217,8 @@ impl ExpectedSite {
                 repr = repr.replacen("-<>-", &i.to_string(), 1);
             }
 
-            self.partition.insert(format!("{}{}", name, repr), elem_comparibility);
+            self.partition
+                .insert(format!("{}{}", name, repr), elem_comparibility);
         }
 
         let dim_len = dims.len();
@@ -222,13 +230,17 @@ impl ExpectedSite {
                 for i in dim_idxs {
                     repr = repr.replacen("-<>-", &i.to_string(), 1);
                 }
-                
-                self.partition.insert(format!("{}{}_LEN", name, repr), dim_comparibility[dim_comparibility.len() - i]);
+
+                self.partition.insert(
+                    format!("{}{}.length", name, repr),
+                    dim_comparibility[dim_comparibility.len() - i],
+                );
             }
         }
 
-        self.partition.insert(format!("{}_LEN", name), dim_comparibility[0]);
-        
+        self.partition
+            .insert(format!("{}.length", name), dim_comparibility[0]);
+
         self
     }
 
@@ -256,7 +268,7 @@ impl ExpectedOutput {
 // FIXME: move away from print based tests, use actual assertions
 #[cfg(test)]
 mod tests {
-    use crate::common::{CartesianProductIterator, ExpectedSite};
+    use crate::common::{CartesianProductIterator, ExpectedSite, prefix_with_path_from_root};
 
     #[test]
     fn test_iter() {
@@ -269,12 +281,8 @@ mod tests {
 
     #[test]
     fn test_array_site() {
-        let site = ExpectedSite::new("test::site").register_array(
-            "arr",
-            vec![3, 4, 5],
-            0,
-            vec![1, 2, 3]
-        );
+        let site = ExpectedSite::new(prefix_with_path_from_root("common/main.rs::test::site"))
+            .register_array("arr", vec![3, 4, 5], 0, vec![1, 2, 3]);
 
         println!("{:#?}", site.build());
     }

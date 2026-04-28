@@ -9,7 +9,6 @@ fn main() {
     v.push(30);
 
     foo(v, 1, 2);
-    
 }
 
 fn foo(mut v: my_vec::Vector<u32>, a: u32, b: u32) -> u32 {

@@ -5,7 +5,7 @@
 use rustc_ast::{self as ast};
 use rustc_parse::lexer::StripTokens;
 use rustc_parse::new_parser_from_source_str;
-use rustc_parse::parser::{ForceCollect, AllowConstBlockItems};
+use rustc_parse::parser::{AllowConstBlockItems, ForceCollect};
 use rustc_session::parse::ParseSess;
 use rustc_span::{FileName, RealFileName};
 

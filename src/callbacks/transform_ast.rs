@@ -15,11 +15,9 @@ use rustc_session::parse::ParseSess;
 
 use crate::{
     common::DatirConfig,
-    file_loaders::transforming_loader::{FileType, Passes, TransformingFileLoader},
+    file_loaders::transforming_loader::{Passes, TransformingFileLoader},
     types::ati_info::FirstPassInfo,
-    visitors::{
-        TransformVisitor, add_crate_attribute, define_types_from_file, generate_stubs, import_root_crate
-    },
+    visitors::{TransformVisitor, add_crate_attribute, define_types_from_file, generate_stubs},
 };
 
 /// Callbacks used to transform the ASTs of all files being instrumented.
@@ -48,23 +46,16 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         let datir_config = self.config.clone();
         let mut passes = Passes::new();
         passes.register(Box::new(
-            move |psess: &ParseSess,
-                  mut krate: &mut ast::Crate,
-                  ftype: &FileType,
-                  module_path: &str| {
+            move |psess: &ParseSess, mut krate: &mut ast::Crate, module_path: &str| {
                 // Single visitor that performs both expression instrumentation
                 // (literals, binary ops, calls, etc.) and type wrapping (Tagged<T>)
                 // in one AST walk.
-                let mut visitor = TransformVisitor::new(&datir_config, &first_pass, psess);
+                let mut visitor =
+                    TransformVisitor::new(&datir_config, &first_pass, psess, module_path);
                 visitor.visit_crate(&mut krate);
 
                 // create all required function stubs, which perform site management
-                generate_stubs(&datir_config, krate, module_path, psess);
-
-                // make the ATI types available to dependancies
-                if matches!(ftype, FileType::Dep) {
-                    import_root_crate(&mut krate, &psess);
-                }
+                generate_stubs(&datir_config, &first_pass, krate, module_path, psess);
             },
         ));
 
@@ -75,7 +66,7 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         )));
     }
 
-    /// Defines necessary types (namely Tagged<T>, but also globals like ATI_ANALYSIS) 
+    /// Defines necessary types (namely Tagged<T>, but also globals like ATI_ANALYSIS)
     /// in the root file. All other files will import these types from the root.
     /// Adds necessary compiler features.
     fn after_crate_root_parsing(
@@ -84,9 +75,21 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         krate: &mut ast::Crate,
     ) -> Compilation {
         let cwd = std::env::current_dir().unwrap();
-        define_types_from_file(&cwd.join("src/ati/collection.rs"), &compiler.sess.psess, krate);
-        define_types_from_file(&cwd.join("src/ati/tagged_ops.rs"), &compiler.sess.psess, krate);
-        define_types_from_file(&cwd.join("src/ati/site_binds.rs"), &compiler.sess.psess, krate);
+        define_types_from_file(
+            &cwd.join("src/ati/collection.rs"),
+            &compiler.sess.psess,
+            krate,
+        );
+        define_types_from_file(
+            &cwd.join("src/ati/tagged_ops.rs"),
+            &compiler.sess.psess,
+            krate,
+        );
+        define_types_from_file(
+            &cwd.join("src/ati/site_binds.rs"),
+            &compiler.sess.psess,
+            krate,
+        );
         define_types_from_file(&cwd.join("src/ati/index.rs"), &compiler.sess.psess, krate);
         define_types_from_file(&cwd.join("src/ati/tagged.rs"), &compiler.sess.psess, krate);
         define_types_from_file(&cwd.join("src/ati/ati.rs"), &compiler.sess.psess, krate);
@@ -95,21 +98,9 @@ impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
             &compiler.sess.psess,
             krate,
         );
-        add_crate_attribute(
-            "#![feature(step_trait)]",
-            &compiler.sess.psess,
-            krate,
-        );
-        add_crate_attribute(
-            "#![feature(unsize)]",
-            &compiler.sess.psess,
-            krate,
-        );
-        add_crate_attribute(
-            "#![feature(coerce_unsized)]",
-            &compiler.sess.psess,
-            krate,
-        );
+        add_crate_attribute("#![feature(step_trait)]", &compiler.sess.psess, krate);
+        add_crate_attribute("#![feature(unsize)]", &compiler.sess.psess, krate);
+        add_crate_attribute("#![feature(coerce_unsized)]", &compiler.sess.psess, krate);
 
         Compilation::Continue
     }

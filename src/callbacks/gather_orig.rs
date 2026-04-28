@@ -6,11 +6,18 @@
 */
 use rustc_ast as ast;
 use rustc_driver::Compilation;
+use rustc_hir::def_id::{CRATE_DEF_ID, LocalDefId};
 use rustc_interface::interface;
 use rustc_middle::ty::TyCtxt;
 use std::sync::Arc;
 
-use crate::{common::DatirConfig, types::ati_info::FirstPassInfo, visitors::AnalyzeHirVisitor};
+use decls_gen::DeclsFile;
+
+use crate::{
+    common::DatirConfig,
+    types::ati_info::{FirstPassInfo, ModPath, TypeKey},
+    visitors::AnalyzeHirVisitor,
+};
 
 /// Defines the callbacks used for the first information-gathering compilation.
 pub struct GatherAtiInfo {
@@ -33,6 +40,149 @@ impl GatherAtiInfo {
     pub fn into_first_pass_info(self) -> FirstPassInfo {
         self.first_pass
     }
+
+    /// For the given function identified by `local_def_id`, get the base_ppt_name
+    /// which corresponds to it (i.e. everything before :::{ENTER|EXIT|EXITNN} in
+    /// the decls file). If the DATIR configuration loaded a decls file, check 
+    /// that a matching ppt exists in the decls file. Store the fn ident, def id,
+    /// and base_ppt_name in FirstPassInfo.
+    fn record_fn<'tcx>(
+        &mut self,
+        tcx: TyCtxt<'tcx>,
+        local_def_id: LocalDefId,
+        ident: rustc_span::Ident,
+        type_key: Option<TypeKey>,
+    ) {
+        let base_ppt_name = DeclsFile::ppt_base_name(tcx, local_def_id);
+
+        if let Some(decls_file) = self.config.decls_file.as_ref() {
+            // ppts_for() does a BTreeMap range query for ENTER/EXIT/EXITNN, we
+            // just check if there is at least some ppt with this base name
+            if decls_file.ppts_for(&base_ppt_name).is_empty() {
+                panic!(
+                    "DATIR/decls-gen is out of sync: no program point in the .decls file \
+                     matches base ppt name `{base_ppt_name}` for {local_def_id:?}. The \
+                     gather pass and decls-gen must visit the same set of fn/method items."
+                );
+            }
+        }
+
+        let mod_path = mod_path_of(tcx, local_def_id);
+        self.first_pass.observe_fn(
+            mod_path,
+            type_key,
+            ident,
+            local_def_id.to_def_id(),
+            base_ppt_name,
+        );
+    }
+}
+
+/// Module path for `ldid`s enclosing module, joined by ::. For the crate root
+/// this returns an empty string.
+fn mod_path_of<'tcx>(tcx: TyCtxt<'tcx>, ldid: LocalDefId) -> ModPath {
+    let parent_mod = tcx.parent_module_from_def_id(ldid);
+    if parent_mod.to_local_def_id() == CRATE_DEF_ID {
+        String::new()
+    } else {
+        tcx.def_path_str(parent_mod.to_def_id())
+    }
+}
+
+/// `TypeKey` for the impl block that contains `method_ldid`. Walks the impl
+/// HIR node's `self_ty` and `of_trait` paths and joins ident-only segments
+/// with `::`. 
+/// 
+/// Returns None when the impl's self-type isn't a resolved path
+/// (slice/array/tuple/ref/trait-object/fn-pointer self-types)
+fn impl_type_key<'tcx>(tcx: TyCtxt<'tcx>, method_ldid: LocalDefId) -> Option<TypeKey> {
+    // FIXME:  this needs to be more robust, we probably can support above types
+    let impl_ldid = tcx.local_parent(method_ldid);
+    let rustc_hir::Node::Item(rustc_hir::Item {
+        kind:
+            rustc_hir::ItemKind::Impl(rustc_hir::Impl {
+                self_ty, of_trait, ..
+            }),
+        ..
+    }) = tcx.hir_node_by_def_id(impl_ldid)
+    else {
+        return None;
+    };
+
+    let self_path_str = hir_ty_canonical(self_ty)?;
+    let trait_path_str = match of_trait {
+        Some(header) => Some(hir_path_canonical(header.trait_ref.path)?),
+        None => None,
+    };
+
+    Some(match trait_path_str {
+        Some(t) => TypeKey::trait_impl(self_path_str, t),
+        None => TypeKey::inherent(self_path_str),
+    })
+}
+
+/// HIR counterpart to `stubs.rs::ast_path_canonical`. Creates a 
+/// ::-joined ident<args> form string. 
+/// 
+/// Returns None on non-`AngleBracketed` args, associated-type
+/// constraints, const generic args, and non-path types as type args.
+fn hir_path_canonical(path: &rustc_hir::Path<'_>) -> Option<String> {
+    // FIXME: support above.
+    let mut parts = Vec::with_capacity(path.segments.len());
+    for seg in path.segments.iter() {
+        parts.push(hir_segment_canonical(seg)?);
+    }
+    Some(parts.join("::"))
+}
+
+/// Gets the canonical representation of a single path segment.
+fn hir_segment_canonical(seg: &rustc_hir::PathSegment<'_>) -> Option<String> {
+    let ident = seg.ident.name.to_string();
+    let Some(args) = seg.args else {
+        return Some(ident);
+    };
+
+    if !args.parenthesized.eq(&rustc_hir::GenericArgsParentheses::No) {
+        return None;
+    }
+
+    let mut rendered = Vec::new();
+    for arg in args.args.iter() {
+        let s = match arg {
+            rustc_hir::GenericArg::Lifetime(lt) => lt.ident.name.to_string(),
+            rustc_hir::GenericArg::Type(ty) => hir_ty_canonical(ty.as_unambig_ty())?,
+            rustc_hir::GenericArg::Const(_) => panic!(
+                "DATIR does not support const generic arguments in impl-block paths \
+                 (encountered in segment `{}`); see hir_segment_canonical",
+                seg.ident.name
+            ),
+            rustc_hir::GenericArg::Infer(_) => panic!(
+                "DATIR does not support inferred (`_`) generic arguments in impl-block \
+                 paths (encountered in segment `{}`); see hir_segment_canonical",
+                seg.ident.name
+            ),
+        };
+        rendered.push(s);
+    }
+
+    // FIXME: not really sure what to do with constraints, skipping for now.
+    if !args.constraints.is_empty() {
+        return None;
+    }
+
+    if rendered.is_empty() {
+        Some(ident)
+    } else {
+        Some(format!("{ident}<{}>", rendered.join(",")))
+    }
+}
+
+/// Gets the canonical represetnation of this path type
+fn hir_ty_canonical(ty: &rustc_hir::Ty<'_>) -> Option<String> {
+    let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = ty.kind else {
+        return None;
+    };
+    hir_path_canonical(path)
 }
 
 impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
@@ -52,10 +202,10 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
     /// This is where the key functionality of this compiler invocation lies.
     /// Overall, the following is performed:
     ///   1. Find all locations (code spans) where:
-    ///       a. 
+    ///       a.
     ///   2. Find all invocations of functions that are not defined in the instrumented files
     ///      (calls to code in libraries which was left uninstrumented).
-    /// 
+    ///
     /// As of 3/29/26, we are choosing to ignore uninstrumented libraries, meaning that
     /// (2) is really an unnecessary step. The goal is to instrument the standard library at least
     /// and after that is done, determine what needs to be added to this code to appropriately handle
@@ -81,8 +231,7 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
             }) = node
             {
                 // we found a regular function, named `ident`!
-                self.first_pass
-                    .observe_tracked_fn(&ident, local_def_id.to_def_id());
+                self.record_fn(tcx, local_def_id, *ident,  None);
             } else if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
                 ident,
                 kind: rustc_hir::ImplItemKind::Fn(_, _),
@@ -90,8 +239,13 @@ impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
             }) = node
             {
                 // we found a method defined in some impl block!
-                self.first_pass
-                    .observe_tracked_fn(ident, local_def_id.to_def_id());
+                let type_key = impl_type_key(tcx, local_def_id).unwrap_or_else(|| {
+                    panic!(
+                        "Could not derive TypeKey for impl method {local_def_id:?}, \
+                         enclosing impl block has a non-path self-type."
+                    )
+                });
+                self.record_fn(tcx, local_def_id, *ident, Some(type_key));
             } else if let rustc_hir::Node::ImplItem(_) = node {
                 // non-Fn impl items (associated constants, types)
                 // FIXME: probably safe to ignore for now, but should be implemented soon

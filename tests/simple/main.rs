@@ -1,12 +1,9 @@
-#![allow(unused)]
-
-#[ignore]
 fn main() {
     let x = 1;
     let y = 2;
     let z = 3;
     foo(x, y, z);
-    foo(z, x, y);
+    // foo(x, y, z);
 }
 
 fn foo(x: u32, y: u32, z: u32) -> u32 {

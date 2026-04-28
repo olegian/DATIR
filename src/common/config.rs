@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::Path;
 
 /// DATIR configuration, to provide easy access to some helpful debugging information.
+#[derive(Debug)]
 pub struct DatirConfig {
     /// Directory where all log files are written. If None, all debug output is writen to stdout.
     pub log_dir: Option<Box<Path>>,
@@ -15,9 +16,10 @@ pub struct DatirConfig {
     /// Whether or not to print the information regarding function signatures used to create
     /// function stubs
     pub print_function_signatures: bool,
-    /// Set to true to have instrumented executable produce a .decls formatted file, as opposed to 
+    /// Set to true to have instrumented executable produce a .decls formatted file, as opposed to
     /// just printing the abstract type information for each value
     pub output_decls_format: Option<std::path::PathBuf>,
+    pub decls_file: Option<decls_gen::DeclsFile>,
 }
 
 impl DatirConfig {
@@ -36,6 +38,7 @@ impl DatirConfig {
             print_first_pass_info: true,
             print_function_signatures: true,
             output_decls_format: None,
+            decls_file: None,
         }
     }
 
@@ -46,6 +49,7 @@ impl DatirConfig {
             print_first_pass_info: false,
             print_function_signatures: false,
             output_decls_format: None,
+            decls_file: None,
         }
     }
 
@@ -57,6 +61,7 @@ impl DatirConfig {
             print_first_pass_info: false,
             print_function_signatures: false,
             output_decls_format: Some(decls_file_name),
+            decls_file: None,
         }
     }
 

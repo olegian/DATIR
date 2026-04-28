@@ -37,7 +37,11 @@ impl<T> Vector<T> {
     fn grow(&mut self) {
         let new_cap = if self.cap == 0 { 1 } else { 2 * self.cap };
         // Ensure that T has a non-zero size for the Layout
-        assert_ne!(std::mem::size_of::<T>(), 0, "Can't allocate for zero-sized types");
+        assert_ne!(
+            std::mem::size_of::<T>(),
+            0,
+            "Can't allocate for zero-sized types"
+        );
 
         let layout = Layout::array::<T>(new_cap).expect("Layout creation failed");
 
@@ -47,7 +51,11 @@ impl<T> Vector<T> {
                 alloc::alloc(layout)
             } else {
                 // SAFETY: self.ptr is non-null and points to a valid allocation
-                alloc::realloc(self.ptr.as_ptr() as *mut u8, Layout::array::<T>(self.cap).unwrap(), layout.size())
+                alloc::realloc(
+                    self.ptr.as_ptr() as *mut u8,
+                    Layout::array::<T>(self.cap).unwrap(),
+                    layout.size(),
+                )
             }
         };
 
@@ -68,9 +76,7 @@ impl<T> Vector<T> {
 
     pub fn as_slice(&self) -> &[T] {
         // SAFETY: self.ptr points to self.len initialized elements.
-        unsafe {
-            std::slice::from_raw_parts(self.ptr.as_ptr(), self.len)
-        }
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 
     // Add other methods like `get`, `get_mut`, `&self[index]`, etc.

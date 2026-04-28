@@ -246,7 +246,7 @@ impl<T: Copy + std::iter::Step> std::iter::FusedIterator for Tagged<std::ops::Ra
 
 /// RangeInclusive has a hidden `exhausted` flag we can't reach, so we
 /// encode exhaustion by leaving `start > end` when we yield the last
-/// value — `start == T::MAX` is the only case where this can't hold and
+/// value - `start == T::MAX` is the only case where this can't hold and
 /// would double-yield; acceptable edge case for our instrumentation.
 impl<T: Copy + std::iter::Step> Iterator for Tagged<std::ops::RangeInclusive<Tagged<T>>> {
     type Item = Tagged<T>;
@@ -318,10 +318,6 @@ impl<T: Copy + std::iter::Step> std::iter::FusedIterator
 {
 }
 
-/// `RangeBounds` is what `BTreeMap::range(..)`, `Vec::drain(r)`, and other
-/// range-parameterized APIs ask for. We return references into `self.1`'s
-/// endpoints, which carry the raw `T` behind a `Tagged` — but `Bound<&T>`
-/// is what callers expect, so we Deref-shed the tag on read.
 impl<T> std::ops::RangeBounds<T> for Tagged<std::ops::Range<Tagged<T>>> {
     fn start_bound(&self) -> std::ops::Bound<&T> {
         std::ops::Bound::Included(&self.1.start.1)

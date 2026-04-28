@@ -21,7 +21,11 @@
 // FIXME: this file definitiely has some dead code everywhere, and can probably be
 // refactored to remove some functions.
 
-use crate::ati::{collection::Collect, index::{TaggedSliceIndex, TaggedSliceable}, tagged::{Id, Tagged, TaggedRef, TaggedRefMut, Tagger}};
+use crate::ati::{
+    collection::Collect,
+    index::{TaggedSliceIndex, TaggedSliceable},
+    tagged::{Id, Tagged, TaggedRef, TaggedRefMut, Tagger},
+};
 
 /// Top-level global that owns all information about all value interactions
 /// and ATI site states.
@@ -60,15 +64,15 @@ impl Site {
         // for each variable
         for (var, new_tag) in self.observed_var_tags.iter_mut() {
             match self.var_tags.get_mut(var) {
-                // we have previously seen this variable at this site, 
+                // we have previously seen this variable at this site,
                 // and chosen some previous leader tag (within the value_uf)
-                // to be the canonnical representation for the abstract type 
+                // to be the canonnical representation for the abstract type
                 // associated with this variable.
                 Some(prev_leader) => {
                     let new_leader = value_uf.find(prev_leader).unwrap();
                     if new_leader != *prev_leader {
-                        // the leader has changed, merge new leader with old leader in 
-                        // type_uf, and update the new_tag 
+                        // the leader has changed, merge new leader with old leader in
+                        // type_uf, and update the new_tag
 
                         // make sure type_uf is aware of this new leader,
                         self.type_uf.introduce_tag(new_leader);
@@ -77,11 +81,14 @@ impl Site {
 
                     let new_tag_leader = value_uf.find(new_tag).unwrap();
                     self.type_uf.introduce_tag(new_tag_leader);
-                    *prev_leader = self.type_uf.union_tags(&new_tag_leader, &prev_leader).unwrap();
-                },
+                    *prev_leader = self
+                        .type_uf
+                        .union_tags(&new_tag_leader, &prev_leader)
+                        .unwrap();
+                }
 
                 // this is the first time we are observing this variable at this site.
-                // make the value_uf leader of whatever Id is associated with the current value 
+                // make the value_uf leader of whatever Id is associated with the current value
                 // stored within this variable the canonnical abstract type set of this variable.
                 None => {
                     // find the current leader tag associated with the value's interaction set
@@ -96,7 +103,7 @@ impl Site {
 
                     // record that this variable is within the AT set represented by the leader
                     self.var_tags.insert(var.clone(), leader);
-                },
+                }
             }
         }
     }
@@ -135,7 +142,7 @@ fn collapse_array_indices(name: &str) -> Option<String> {
         return is_representative.then(|| format!("{base}[..]"));
     }
 
-    if name.ends_with("_LEN") {
+    if name.ends_with(".length") {
         if name.contains('[') {
             return None;
         }
@@ -187,7 +194,6 @@ impl Sites {
     pub fn report(&mut self) {
         println!("===ATI-ANALYSIS-START===");
         for (_, site) in self.locs.iter_mut() {
-            
             site.report();
         }
     }
@@ -331,23 +337,18 @@ impl ATI {
     /// Moves a value from a standard type T to a Tagged<T>,
     /// assigning it a unique Id
     pub fn track<T>(value: T) -> Tagged<T>
-    where {
+where {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
         Tagged(id, value)
     }
 
-    /// Wraps a raw array into a `Tagged<[E; N]>` with a fresh wrapper id, and
-    /// unifies tags so all elements at every depth share an AT per depth. The
-    /// element type `E` is any `Trackable` — typically `Tagged<U>`, but arrays
-    /// of references (e.g. `[&a[..], &b[..], &c[..]]` → `[&Tagged<&[T]>; 3]`)
-    /// also satisfy this bound because we specialize `Trackable` for
-    /// `&Tagged<..>` and `&mut Tagged<..>` wrappers. Non-tracked elements fall
-    /// into the default impl that contributes no ids.
-    ///
-    /// Specializations walk through nested `Tagged<[..]>` and `Tagged<&[..]>`
-    /// elements so arbitrarily-nested arrays end up with: one AT per nesting
-    /// depth containing every element at that depth, plus one AT for the new
-    /// wrapper.
+    // FIXME: currnetl array/slice tracking is fucked up.
+    /// Wraps a raw array into a `Tagged<[E; N]>` with a fresh wrapper id corresponding
+    /// to the length. Note, the elements are NOT unified at this time, 
+    /// as just being a part of the same array does not mean the elements
+    /// are intereacting together -- that's just in essense an assignment.
+    /// During the site update however, all tags will be merged within the type_uf,
+    /// meaning the array variable will hold elements of the same abstract type.
     pub fn track_array<T: Collect, const N: usize>(array: [T; N]) -> Tagged<[T; N]> {
         let id = ATI_ANALYSIS.lock().unwrap().value_uf.make_set();
 
@@ -382,13 +383,10 @@ impl ATI {
     }
 
     /// Build a `TaggedRef<[T]>` viewing a subrange of `collection`. The
-    /// collection's own Id is reused for the subslice view — the UF merge
+    /// collection's own Id is reused for the subslice view. The UF merge
     /// unifies the range and collection Id's leader, so any later tag
-    /// operations on either borrow see the same AT.
-    pub fn track_subslice<'a, T, S, R>(
-        collection: &'a S,
-        range: R,
-    ) -> TaggedRef<'a, [T]>
+    /// operations on either borrow see the same AT
+    pub fn track_subslice<'a, T, S, R>(collection: &'a S, range: R) -> TaggedRef<'a, [T]>
     where
         S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
@@ -396,19 +394,15 @@ impl ATI {
         let range_id = range.id();
         let (collection_id, subslice) = collection.raw_subslice(range.into_raw());
 
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(collection_id, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(collection_id, &range_id);
         TaggedRef(collection_id, subslice)
     }
 
-    /// Mutable-borrow counterpart of [`track_subslice`]. Because the Id borrow
-    /// is shared with the collection's own Id (see [`track_subslice`]), the
-    /// mutable subslice is handed an immutable borrow of the Id — downstream
-    /// operations that want to mutate the Id of the overall collection must go
-    /// through `ATI_ANALYSIS` rather than this borrow.
-    pub fn track_subslice_mut<'a, T, S, R>(
-        collection: &'a mut S,
-        range: R,
-    ) -> TaggedRefMut<'a, [T]>
+    /// Mutable-borrow counterpart of [`track_subslice`].
+    pub fn track_subslice_mut<'a, T, S, R>(collection: &'a mut S, range: R) -> TaggedRefMut<'a, [T]>
     where
         S: TaggedSliceable<'a, T> + 'a,
         R: TaggedSliceIndex<T>,
@@ -416,14 +410,14 @@ impl ATI {
         let range_id = range.id();
         let (collection_id, subslice) = collection.raw_subslice_mut(range.into_raw());
 
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(collection_id, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(collection_id, &range_id);
         TaggedRefMut(collection_id, subslice)
     }
 
-    pub fn track_range<T>(
-        start: Tagged<T>,
-        end: Tagged<T>,
-    ) -> Tagged<std::ops::Range<Tagged<T>>> {
+    pub fn track_range<T>(start: Tagged<T>, end: Tagged<T>) -> Tagged<std::ops::Range<Tagged<T>>> {
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         let id = ati.value_uf.make_set();
         ati.value_uf.union_tags(&id, &start.0);
@@ -442,18 +436,14 @@ impl ATI {
         Tagged(id, std::ops::RangeInclusive::new(start, end))
     }
 
-    pub fn track_range_from<T>(
-        start: Tagged<T>,
-    ) -> Tagged<std::ops::RangeFrom<Tagged<T>>> {
+    pub fn track_range_from<T>(start: Tagged<T>) -> Tagged<std::ops::RangeFrom<Tagged<T>>> {
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         let id = ati.value_uf.make_set();
         ati.value_uf.union_tags(&id, &start.0);
         Tagged(id, std::ops::RangeFrom { start })
     }
 
-    pub fn track_range_to<T>(
-        end: Tagged<T>,
-    ) -> Tagged<std::ops::RangeTo<Tagged<T>>> {
+    pub fn track_range_to<T>(end: Tagged<T>) -> Tagged<std::ops::RangeTo<Tagged<T>>> {
         let mut ati = ATI_ANALYSIS.lock().unwrap();
         let id = ati.value_uf.make_set();
         ati.value_uf.union_tags(&id, &end.0);

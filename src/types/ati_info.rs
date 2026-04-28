@@ -18,18 +18,93 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hir::def_id::DefId;
 use rustc_middle as mir;
-use rustc_span::{Ident, Span};
+use rustc_span::{Ident, Span, Symbol};
 
 use crate::common::CanBeTupled;
+
+/// ::-joined module path matching `tcx.def_path_str` format.
+/// `""` denotes the crate root.
+pub type ModPath = String;
+
+/// Namespace key for an impl-method's enclosing impl block. Distinguishes
+/// inherent impls from trait impls so that `impl Foo { fn bar() }` and
+/// `impl SomeTrait for Foo { fn bar() }` don't collide in the
+/// `(mod_path, type_key, method_ident)` slot in FirstPassInfo.
+///
+/// Both paths are stored as fully qualified paths.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct TypeKey {
+    /// ::-joined path of the impl's self type,
+    /// Generic args are dropped (impl Foo<u32> and impl<T> Foo<T>
+    /// both produce "Foo").
+    pub self_path: String,
+    /// Some(path) for `impl Trait for T`, None for inherent impls. Same
+    /// ::-joined ident-only format as self_path.
+    pub trait_path: Option<String>,
+}
+
+impl TypeKey {
+    /// Constructor for non-trait based impls
+    pub fn inherent(self_path: impl Into<String>) -> Self {
+        Self {
+            self_path: self_path.into(),
+            trait_path: None,
+        }
+    }
+
+    /// Constructor for trait based impls
+    pub fn trait_impl(self_path: impl Into<String>, trait_path: impl Into<String>) -> Self {
+        Self {
+            self_path: self_path.into(),
+            trait_path: Some(trait_path.into()),
+        }
+    }
+}
+
+impl std::fmt::Display for TypeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.trait_path {
+            Some(t) => write!(f, "{} as {}", self.self_path, t),
+            None => f.write_str(&self.self_path),
+        }
+    }
+}
+
+/// Contains per-fn information learned in pass 1
+#[derive(Debug, Clone)]
+pub struct FnEntry {
+    pub ident: Ident,
+    pub def_id: DefId,
+
+    /// DeclsFile::ppt_base_name for this function.
+    pub base_ppt_name: String,
+}
+
+/// All instrumented fns defined in a single module, partitioned by their
+/// namespace (free fn vs. method on a type).
+#[derive(Debug, Default)]
+pub struct ModEntry {
+    /// Free functions in this module, keyed by fn ident
+    pub free_fns: HashMap<Symbol, FnEntry>,
+    /// Methods, keyed by `TypeKey` (head ident of the impl's self-type) and
+    /// then by method-ident `Symbol`.
+    pub methods: HashMap<TypeKey, HashMap<Symbol, FnEntry>>,
+}
 
 /// Contains all information that is going to be passed between the
 /// first and second compilation rounds. Populated by invoking the
 /// compiler, using the GatherAtiInfo callbacks.
 #[derive(Debug, Default)]
 pub struct FirstPassInfo {
-    /// which user-defined functions are instrumented across the entire project
+    /// Per-module index of every fn/method that pass 1 wants pass 2 to
+    /// instrument. Note that ModEntry will also hold the appropriate
+    /// base_ppt_name to use when constructing sites.
+    mods: HashMap<ModPath, ModEntry>,
+
+    /// Flat set of every tracked fn/method's DefId. Maintained as a side
+    /// cache when entries are added to mods because find_calls.rs needs to
+    /// determine if a particular call is tracked only given a DefId resolved by typeck.
     tracked_fn_def_ids: HashSet<DefId>,
-    tracked_fn_idents: HashSet<Ident>,
 
     /// places where a track_slice needs to be inserted, as a coercion from an array to a slice type occurred
     index_by_range_locs: HashSet<Span>,
@@ -46,27 +121,47 @@ pub struct FirstPassInfo {
 
     /// Spans of unary `*` expressions whose operand's type is `&T` / `&mut T`
     /// with `T` tupleable. Post-instrumentation these operate on a
-    /// `TaggedRef` / `TaggedRefMut`, and a raw `*` would strip the tag —
-    /// pass 2 rewrites them to rebuild a `Tagged<T>` from the borrowed fields.
+    /// `TaggedRef` / `TaggedRefMut`, and a raw `*` would strip the tag.
     tag_stripping_deref_locs: HashSet<Span>,
 
     /// Spans of `Assign` / `AssignOp` whose LHS is `*expr` with `expr` typed
-    /// `&mut T` and `T` tupleable. A raw write through the instrumented
-    /// `TaggedRefMut<T>` hits `DerefMut` and only overwrites `.1` — the id
-    /// from the RHS never reaches the slot. Pass 2 rewrites these sites to
-    /// `expr.assign(rhs)` (double-write, no UF merge: assignment is not an
-    /// interaction).
+    /// `&mut T` and `T` tupleable. 
     assign_through_tagged_ref_mut_locs: HashSet<Span>,
 }
 
 impl FirstPassInfo {
-    /// register that a function with `ident` and `def_id` should
-    /// instrumented later
-    // NOTE: This is only really useful for extern crates and library files
-    // that we are unable to instrument. For now, there is no reason to do this
-    // as we assume that all code
-    pub fn observe_tracked_fn(&mut self, ident: &Ident, def_id: DefId) {
-        self.tracked_fn_idents.insert(ident.clone());
+    /// Record that `def_id` (with display `ident`, item span `item_span`, and
+    /// `DeclsFile`-format `base_ppt_name`) lives at `mod_path` and should be
+    /// instrumented. `type_key` is `Some(t)` for impl methods on type `t` (head
+    /// ident, no generic args) and `None` for free fns
+    pub fn observe_fn(
+        &mut self,
+        mod_path: ModPath,
+        type_key: Option<TypeKey>,
+        ident: Ident,
+        def_id: DefId,
+        base_ppt_name: String,
+    ) {
+        let entry = FnEntry {
+            ident,
+            def_id,
+            base_ppt_name,
+        };
+
+        let mod_entry = self.mods.entry(mod_path).or_default();
+        match type_key {
+            None => {
+                mod_entry.free_fns.insert(ident.name, entry);
+            }
+            Some(tk) => {
+                mod_entry
+                    .methods
+                    .entry(tk)
+                    .or_default()
+                    .insert(ident.name, entry);
+            }
+        }
+
         self.tracked_fn_def_ids.insert(def_id);
     }
 
@@ -79,11 +174,11 @@ impl FirstPassInfo {
     pub fn observe_index_by_range(&mut self, loc: Span) {
         self.index_by_range_locs.insert(loc);
     }
-    
+
     pub fn observe_ref_to_tupleable_ty(&mut self, loc: Span) {
         self.ref_to_tupleable_ty.insert(loc);
     }
-    
+
     pub fn is_span_ref_to_tupleable_ty(&self, loc: &Span) -> bool {
         self.ref_to_tupleable_ty.contains(loc)
     }
@@ -104,11 +199,6 @@ impl FirstPassInfo {
         self.assign_through_tagged_ref_mut_locs.contains(loc)
     }
 
-    /// returns true if this identifier represent a tracked function
-    pub fn is_fn_ident_tracked(&self, ident: &Ident) -> bool {
-        self.tracked_fn_idents.contains(ident)
-    }
-
     /// returns true if this def_id represents a tracked function
     pub fn is_fn_def_id_tracked(&self, def_id: &DefId) -> bool {
         self.tracked_fn_def_ids.contains(def_id)
@@ -122,5 +212,38 @@ impl FirstPassInfo {
 
     pub fn is_span_index_by_range(&self, location: &Span) -> bool {
         self.index_by_range_locs.contains(location)
+    }
+
+    /// Look up the recorded `FnEntry` for a free fn in module `mod_path` with
+    /// ident-symbol `ident`
+    pub fn lookup_free_fn(&self, mod_path: &str, ident: Symbol) -> Option<&FnEntry> {
+        self.mods.get(mod_path)?.free_fns.get(&ident)
+    }
+
+    /// Look up the recorded `FnEntry` for a method in module `mod_path` on
+    /// the impl identified by `type_key` with name `ident`
+    pub fn lookup_method(
+        &self,
+        mod_path: &str,
+        type_key: &TypeKey,
+        ident: Symbol,
+    ) -> Option<&FnEntry> {
+        self.mods.get(mod_path)?.methods.get(type_key)?.get(&ident)
+    }
+
+    /// Set of fn/method names defined in a particular `(mod_path, namespace)`
+    /// slot, used by stub generation to choose a non-clashing inner name.
+    pub fn known_fn_names_in(&self, mod_path: &str, type_key: Option<&TypeKey>) -> HashSet<String> {
+        let Some(mod_entry) = self.mods.get(mod_path) else {
+            return HashSet::new();
+        };
+        match type_key {
+            None => mod_entry.free_fns.keys().map(|s| s.to_string()).collect(),
+            Some(tk) => mod_entry
+                .methods
+                .get(tk)
+                .map(|m| m.keys().map(|s| s.to_string()).collect())
+                .unwrap_or_default(),
+        }
     }
 }

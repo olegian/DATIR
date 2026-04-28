@@ -9,7 +9,7 @@ use crate::ati::{
 // [T; N]
 impl<Idx, T, const N: usize> std::ops::Index<Tagged<Idx>> for TaggedArray<T, N>
 where
-    [T; N]: std::ops::Index<Idx, Output=T>,
+    [T; N]: std::ops::Index<Idx, Output = T>,
 {
     type Output = T;
 
@@ -23,7 +23,7 @@ where
 }
 impl<Idx, T, const N: usize> std::ops::IndexMut<Tagged<Idx>> for TaggedArray<T, N>
 where
-    [T; N]: std::ops::IndexMut<Idx, Output=T>
+    [T; N]: std::ops::IndexMut<Idx, Output = T>,
 {
     fn index_mut(&mut self, index: Tagged<Idx>) -> &mut Self::Output {
         ATI_ANALYSIS
@@ -37,7 +37,7 @@ where
 // TaggedRef<[T]>
 impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedRef<'slice, [T]>
 where
-    [T]: std::ops::Index<Idx, Output=T>,
+    [T]: std::ops::Index<Idx, Output = T>,
 {
     type Output = T;
 
@@ -53,7 +53,7 @@ where
 // TaggedRefMut<[T]>
 impl<'slice, Idx, T> std::ops::Index<Tagged<Idx>> for TaggedRefMut<'slice, [T]>
 where
-    [T]: std::ops::Index<Idx, Output=T>,
+    [T]: std::ops::Index<Idx, Output = T>,
 {
     type Output = T;
 
@@ -67,7 +67,7 @@ where
 }
 impl<'slice, Idx, T> std::ops::IndexMut<Tagged<Idx>> for TaggedRefMut<'slice, [T]>
 where
-    [T]: std::ops::IndexMut<Idx, Output=T>,
+    [T]: std::ops::IndexMut<Idx, Output = T>,
 {
     fn index_mut(&mut self, index: Tagged<Idx>) -> &mut Self::Output {
         ATI_ANALYSIS
@@ -95,7 +95,9 @@ where
     std::ops::Range<T>: std::slice::SliceIndex<[Idx], Output = [Idx]>,
 {
     type Raw = std::ops::Range<T>;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         self.1.start.1..self.1.end.1
     }
@@ -105,7 +107,9 @@ where
     std::ops::RangeInclusive<T>: std::slice::SliceIndex<[Idx], Output = [Idx]>,
 {
     type Raw = std::ops::RangeInclusive<T>;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         self.1.start().1..=self.1.end().1
     }
@@ -115,7 +119,9 @@ where
     std::ops::RangeFrom<T>: std::slice::SliceIndex<[Idx], Output = [Idx]>,
 {
     type Raw = std::ops::RangeFrom<T>;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         self.1.start.1..
     }
@@ -125,7 +131,9 @@ where
     std::ops::RangeTo<T>: std::slice::SliceIndex<[Idx], Output = [Idx]>,
 {
     type Raw = std::ops::RangeTo<T>;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         ..self.1.end.1
     }
@@ -135,14 +143,18 @@ where
     std::ops::RangeToInclusive<T>: std::slice::SliceIndex<[Idx], Output = [Idx]>,
 {
     type Raw = std::ops::RangeToInclusive<T>;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         ..=self.1.end.1
     }
 }
 impl<T> TaggedSliceIndex<T> for TaggedRangeFull {
     type Raw = std::ops::RangeFull;
-    fn id(&self) -> Id { self.0 }
+    fn id(&self) -> Id {
+        self.0
+    }
     fn into_raw(self) -> Self::Raw {
         ..
     }
@@ -170,15 +182,14 @@ impl<'a, T, const N: usize> TaggedSliceable<'a, T> for TaggedArray<T, N> {
     }
     fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]>
+        R: std::slice::SliceIndex<[T], Output = [T]>,
     {
         (&mut self.0, &mut self.1[range])
     }
 }
 
 // allows slicing TaggedRef<[T]>
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRef<'slice, [T]>
-{
+impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRef<'slice, [T]> {
     fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
@@ -187,15 +198,14 @@ impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRef<'slice, [T]>
     }
     fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]>
+        R: std::slice::SliceIndex<[T], Output = [T]>,
     {
         panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T]>)");
     }
 }
 
 // allows slicing TaggedRefMut<[T]>
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T]>
-{
+impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T]> {
     fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
@@ -204,15 +214,14 @@ impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T]>
     }
     fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]>
+        R: std::slice::SliceIndex<[T], Output = [T]>,
     {
         (&mut self.0, &mut self.1[range])
     }
 }
 
 // allows slicing TaggedRef<[T; N]> (post-instrumentation form of `&[T; N]`)
-impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRef<'slice, [T; N]>
-{
+impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRef<'slice, [T; N]> {
     fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
@@ -221,15 +230,14 @@ impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRef<'slice,
     }
     fn raw_subslice_mut<'b, R>(&'b mut self, _range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]>
+        R: std::slice::SliceIndex<[T], Output = [T]>,
     {
         panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T; N]>)");
     }
 }
 
 // allows slicing TaggedRefMut<[T; N]> (post-instrumentation form of `&mut [T; N]`)
-impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T; N]>
-{
+impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T; N]> {
     fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
     where
         R: std::slice::SliceIndex<[T], Output = [T]>,
@@ -238,7 +246,7 @@ impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRefMut<'sli
     }
     fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
     where
-        R: std::slice::SliceIndex<[T], Output = [T]>
+        R: std::slice::SliceIndex<[T], Output = [T]>,
     {
         (&mut self.0, &mut self.1[range])
     }
@@ -256,7 +264,10 @@ impl<T, const N: usize> TaggedArray<T, N> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(&self.0, &range_id);
         TaggedRef(&self.0, &self.1[range.into_raw()])
     }
     pub fn subslice_mut<R>(&mut self, range: R) -> TaggedRefMut<'_, [T]>
@@ -264,7 +275,10 @@ impl<T, const N: usize> TaggedArray<T, N> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(&self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(&self.0, &range_id);
         TaggedRefMut(&mut self.0, &mut self.1[range.into_raw()])
     }
 }
@@ -275,7 +289,10 @@ impl<'slice, T, const N: usize> TaggedRef<'slice, [T; N]> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &range_id);
         TaggedRef(self.0, &self.1[range.into_raw()])
     }
 }
@@ -286,7 +303,10 @@ impl<'slice, T> TaggedRef<'slice, [T]> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &range_id);
         TaggedRef(self.0, &self.1[range.into_raw()])
     }
 }
@@ -297,7 +317,10 @@ impl<'slice, T, const N: usize> TaggedRefMut<'slice, [T; N]> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &range_id);
         TaggedRefMut(self.0, &mut self.1[range.into_raw()])
     }
 }
@@ -308,7 +331,10 @@ impl<'slice, T> TaggedRefMut<'slice, [T]> {
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
-        ATI_ANALYSIS.lock().unwrap().union_and_get_id(self.0, &range_id);
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &range_id);
         TaggedRefMut(self.0, &mut self.1[range.into_raw()])
     }
 }

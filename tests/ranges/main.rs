@@ -34,7 +34,7 @@ fn get_length(range: std::ops::Range<usize>, a: usize) -> usize {
     a + range.len()
 }
 
-fn pass_range(range: std::ops::Range<usize>, unused: usize) -> usize{
+fn pass_range(range: std::ops::Range<usize>, unused: usize) -> usize {
     let sum: usize = range.sum();
     sum
 }

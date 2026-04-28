@@ -1,18 +1,13 @@
-
 struct MyTuple(u32, u32);
 struct MyStruct {
     a: u32,
     b: u32,
 }
 enum MyEnum {
-    StructVariant {
-        a: u32,
-        b: u32,
-    },
+    StructVariant { a: u32, b: u32 },
     TupleVariant(u32, u32),
     UnitVariant,
 }
-
 
 #[ignore]
 fn main() {
@@ -20,15 +15,8 @@ fn main() {
     let b = MyTuple(3, 4);
     assign_tuple(a, b);
 
-
-    let c = MyStruct {
-        a: 1,
-        b: 2,
-    };
-    let d = MyStruct {
-        a: 3,
-        b: 4,
-    };
+    let c = MyStruct { a: 1, b: 2 };
+    let d = MyStruct { a: 3, b: 4 };
     assign_struct(c, d);
 
     let e = MyEnum::StructVariant { a: 1, b: 2 };

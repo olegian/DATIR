@@ -6,7 +6,7 @@ impl Add for NewTuple {
     type Output = NewTuple;
 
     fn add(self, rhs: Self) -> Self::Output {
-        NewTuple(self.0 + rhs.0, self.1 + rhs.1, self.2 || self.2)
+        NewTuple(self.0 + rhs.0, self.1 + rhs.1, self.2 || rhs.2)
     }
 }
 
@@ -36,6 +36,25 @@ impl Add for Nested {
 
     fn add(self, rhs: Self) -> Self::Output {
         Nested {
+            a: self.a + rhs.a,
+            b: self.b + rhs.b,
+        }
+    }
+}
+
+struct WithGeneric<T> {
+    a: T,
+    b: u32,
+}
+
+impl<T> std::ops::Add for WithGeneric<T>
+where
+    T: std::ops::Add<Output = T>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        WithGeneric {
             a: self.a + rhs.a,
             b: self.b + rhs.b,
         }
@@ -79,6 +98,10 @@ fn main() {
         b: NewTuple(5, 6, false),
     };
     baz(g, h, i);
+
+    let j = WithGeneric { a: 10, b: 20};
+    let k = WithGeneric { a: 10, b: 20};
+    quux(j, k);
 }
 
 fn foo(a: NewTuple, b: NewTuple, c: NewTuple) -> NewTuple {
@@ -90,5 +113,9 @@ fn bar(a: NewStruct, b: NewStruct, c: NewStruct) -> NewStruct {
 }
 
 fn baz(a: Nested, b: Nested, c: Nested) -> Nested {
+    a + b
+}
+
+fn quux(a: WithGeneric<u32>, b: WithGeneric<u32>) -> WithGeneric<u32> {
     a + b
 }

@@ -1,4 +1,7 @@
-use crate::ati::tagged::{Id, Tagged, TaggedArray, TaggedRange, TaggedRangeFrom, TaggedRangeFull, TaggedRangeInclusive, TaggedRangeTo, TaggedRangeToInclusive, TaggedRef, TaggedRefMut};
+use crate::ati::tagged::{
+    Id, Tagged, TaggedArray, TaggedRange, TaggedRangeFrom, TaggedRangeFull, TaggedRangeInclusive,
+    TaggedRangeTo, TaggedRangeToInclusive, TaggedRef, TaggedRefMut,
+};
 
 /// A trait which all collections implement, providing a method which
 /// groups together the tags of values at the same nesting level.

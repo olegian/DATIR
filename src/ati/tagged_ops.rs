@@ -14,18 +14,30 @@ trait TaggedCmpable<T: ?Sized> {
 }
 
 impl<T: ?Sized> TaggedCmpable<T> for Tagged<T> {
-    fn tagged_id(&self) -> &Id { &self.0 }
-    fn tagged_value(&self) -> &T { &self.1 }
+    fn tagged_id(&self) -> &Id {
+        &self.0
+    }
+    fn tagged_value(&self) -> &T {
+        &self.1
+    }
 }
 
 impl<'a, T: ?Sized> TaggedCmpable<T> for TaggedRef<'a, T> {
-    fn tagged_id(&self) -> &Id { self.0 }
-    fn tagged_value(&self) -> &T { self.1 }
+    fn tagged_id(&self) -> &Id {
+        self.0
+    }
+    fn tagged_value(&self) -> &T {
+        self.1
+    }
 }
 
 impl<'a, T: ?Sized> TaggedCmpable<T> for TaggedRefMut<'a, T> {
-    fn tagged_id(&self) -> &Id { &*self.0 }
-    fn tagged_value(&self) -> &T { &*self.1 }
+    fn tagged_id(&self) -> &Id {
+        &*self.0
+    }
+    fn tagged_value(&self) -> &T {
+        &*self.1
+    }
 }
 
 // PartialEq + PartialOrd between an Lhs and Rhs (both of which must impl
@@ -96,7 +108,6 @@ impl_tagged_partial_cmp!('a, T;         TaggedRefMut<'a, T>, TaggedRefMut<'a, T>
 impl_tagged_total_cmp!(T;       Tagged<T>);
 impl_tagged_total_cmp!('a, T;   TaggedRef<'a, T>);
 impl_tagged_total_cmp!('a, T;   TaggedRefMut<'a, T>);
-
 
 // =====================    ARITHEMATIC OPS    ===================
 // all of these operators merge together the tags of the result, lhs, and rhs.
@@ -312,7 +323,7 @@ where
 
 // this is a really important impl! This gets used for deref coercion,
 // which allows for a &Tagged<T> to automatically be coereced to &T,
-// which allows for dispatching methods that are defined on T using a 
+// which allows for dispatching methods that are defined on T using a
 // Tagged<T>.
 impl<T> std::ops::Deref for Tagged<T> {
     type Target = T;
@@ -321,4 +332,3 @@ impl<T> std::ops::Deref for Tagged<T> {
         &self.1
     }
 }
-

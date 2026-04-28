@@ -26,7 +26,7 @@ fn main() {
     let k = 11;
     let l = 12;
     compares_ref_to_ref(&k, &l);
-    
+
     let m = 13;
     let mut n = 14;
     compares_ref_to_ref_mut(&m, &mut n);
@@ -49,67 +49,35 @@ fn returns_nested_ref<'a, 'b>(a: &'a &&&u32, b: &&&u32) -> &'a &'a &'a &'a u32 {
 }
 
 fn compares_ref_to_value(a: u32, b: &u32) -> u32 {
-    let tmp1 = if a == *b {
-        1
-    } else {
-        2
-    };
+    let tmp1 = if a == *b { 1 } else { 2 };
 
-    let tmp2 = if *b < a {
-        3
-    } else {
-        4
-    };
+    let tmp2 = if *b < a { 3 } else { 4 };
 
     return tmp1 + tmp2;
 }
 
 fn compares_ref_to_ref(a: &u32, b: &u32) -> u32 {
-    let tmp1 = if a < b {
-        1
-    } else {
-        2
-    };
+    let tmp1 = if a < b { 1 } else { 2 };
 
-    let tmp2 = if b < a {
-        3
-    } else {
-        4
-    };
+    let tmp2 = if b < a { 3 } else { 4 };
 
     tmp1 + tmp2
 }
 
 fn compares_ref_to_ref_mut(a: &u32, b: &mut u32) -> u32 {
-    let tmp1 = if a < b {
-        1
-    } else {
-        2
-    };
+    let tmp1 = if a < b { 1 } else { 2 };
 
     // interestingly, b < a fails to compile (with no ParitalOrd for &mut)
     // which means the dereferences are necessary...
-    let tmp2 = if *b < *a {
-        3
-    } else {
-        4
-    };
+    let tmp2 = if *b < *a { 3 } else { 4 };
 
     tmp1 + tmp2
 }
 
 fn compares_ref_mut_to_ref_mut(a: &mut u32, b: &mut u32) -> u32 {
-    let tmp1 = if a == b {
-        1
-    } else {
-        2
-    };
+    let tmp1 = if a == b { 1 } else { 2 };
 
-    let tmp2 = if b < a {
-        3
-    } else {
-        4
-    };
+    let tmp2 = if b < a { 3 } else { 4 };
 
     tmp1 + tmp2
 }

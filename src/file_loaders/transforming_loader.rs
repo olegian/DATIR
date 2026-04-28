@@ -130,7 +130,7 @@ pub enum FileType {
 
 /// `module_path` is the Rust module path derived from the file being processed
 /// (e.g., `""` for root, `"dep"` for `dep.rs`).
-type Pass = Box<dyn Fn(&ParseSess, &mut ast::Crate, &FileType, &str) + Send + Sync>;
+type Pass = Box<dyn Fn(&ParseSess, &mut ast::Crate, &str) + Send + Sync>;
 pub struct Passes(Vec<Pass>);
 impl Passes {
     pub fn new() -> Self {
@@ -168,7 +168,7 @@ impl TransformingFileLoader {
         let mut krate = common::parse_crate(&psess, file.source, Some(path));
 
         for pass in self.passes.iter() {
-            pass(&psess, &mut krate, &file.file_type, &file.module_path);
+            pass(&psess, &mut krate, &file.module_path);
         }
 
         let output = self.ast_to_source(&krate);
