@@ -119,7 +119,7 @@ impl Site {
     }
 
     /// Emits the variable blocks for this site in .decls format.
-    pub fn produce_decls(&mut self, output: &mut std::fs::File) {
+    pub fn produce_ati(&mut self, output: &mut std::fs::File) {
         use std::io::Write;
 
         for (var, tag) in self.var_tags.iter() {
@@ -127,8 +127,8 @@ impl Site {
                 continue;
             };
             let var = var.replace('\\', "\\\\").replace(' ', "\\_");
-            writeln!(output, "variable {}", var).unwrap();
-            writeln!(output, "  comparability {tag}").unwrap();
+
+            writeln!(output, "var {} {}", var, tag).unwrap();
         }
     }
 }
@@ -199,14 +199,13 @@ impl Sites {
     }
 
     /// Emits a .decls file covering all sites.
-    pub fn produce_decls(&mut self, mut output: std::fs::File) {
+    pub fn produce_ati(&mut self, mut output: std::fs::File) {
         use std::io::Write;
 
         for (name, site) in self.locs.iter_mut() {
             let pt_name = name.replace('\\', "\\\\").replace(' ', "\\_");
             writeln!(output, "ppt {}", pt_name).unwrap();
-            writeln!(output, "ppt-type {}", ppt_type_from_name(name)).unwrap();
-            site.produce_decls(&mut output);
+            site.produce_ati(&mut output);
             writeln!(output, "").unwrap();
         }
     }
@@ -498,10 +497,10 @@ where {
     /// Produce output in .decls format.
     // FIXME: would be nice to conditionally include either this or what is required for report() to function,
     // no reason to include both in executable everytime
-    pub fn produce_decls(&mut self, output_file: &str) {
+    pub fn produce_ati(&mut self, output_file: &str) {
         let cwd = std::env::current_dir().expect("Unable to determine current working directory.");
         let file = cwd.join(output_file);
         let file = std::fs::File::create(file).unwrap();
-        self.sites.produce_decls(file)
+        self.sites.produce_ati(file)
     }
 }
