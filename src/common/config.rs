@@ -16,15 +16,16 @@ pub struct DatirConfig {
     /// Whether or not to print the information regarding function signatures used to create
     /// function stubs
     pub print_function_signatures: bool,
-    /// Set to true to have instrumented executable produce a .decls formatted file, as opposed to
-    /// just printing the abstract type information for each value
-    pub output_decls_format: Option<std::path::PathBuf>,
-    pub decls_file: Option<decls_gen::DeclsFile>,
+    /// Directory to which to output .ati files. If None, instrumented binary will 
+    /// print ATI related output to stdout.
+    pub ati_output_dir: Option<std::path::PathBuf>,
+    /// DeclsFile associated with crate being instrumented.
+    pub decls_file: decls_gen::DeclsFile,
 }
 
 impl DatirConfig {
     /// Simple configuration intended to be used for debugging.
-    pub fn debug() -> Self {
+    pub fn debug(decls_file: decls_gen::DeclsFile) -> Self {
         // make sure log directory exists and is empty
         // FIXME: have the final executable also be created in this directory when using debug
         let cwd = std::env::current_dir().unwrap();
@@ -37,31 +38,31 @@ impl DatirConfig {
             print_transformed_source: true,
             print_first_pass_info: true,
             print_function_signatures: true,
-            output_decls_format: None,
-            decls_file: None,
+            ati_output_dir: None,
+            decls_file,
         }
     }
 
-    pub fn test() -> Self {
+    pub fn test(decls_file: decls_gen::DeclsFile) -> Self {
         Self {
             log_dir: None,
             print_transformed_source: false,
             print_first_pass_info: false,
             print_function_signatures: false,
-            output_decls_format: None,
-            decls_file: None,
+            ati_output_dir: None,
+            decls_file,
         }
     }
 
     /// Simple configuration intended to be used for consumer use
-    pub fn release(decls_file_name: std::path::PathBuf) -> Self {
+    pub fn release(decls_file: decls_gen::DeclsFile, ati_output_dir: std::path::PathBuf) -> Self {
         Self {
             log_dir: None,
             print_transformed_source: true,
             print_first_pass_info: false,
             print_function_signatures: false,
-            output_decls_format: Some(decls_file_name),
-            decls_file: None,
+            ati_output_dir: Some(ati_output_dir),
+            decls_file
         }
     }
 

@@ -75,6 +75,7 @@ fn uses_struct() {
         .register("a.1", 1)
         .register("a.2.x", 2)
         .register("a.2.b", 3)
+
         .register("b.a", 4)
         .register("b.b", 5)
         .register("b.c.x", 4)
@@ -88,10 +89,12 @@ fn uses_struct() {
         .register("a.1", 1)
         .register("a.2.x", 2)
         .register("a.2.b", 3)
+
         .register("b.a", 4)
         .register("b.b", 1)
         .register("b.c.x", 4)
         .register("b.c.b", 6)
+
         .register("return.0", 0)
         .register("return.1", 1)
         .register("return.2.x", 2)

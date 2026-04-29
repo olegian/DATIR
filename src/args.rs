@@ -28,6 +28,8 @@ pub struct ArgSpec {
     pub help: &'static str,
     /// placeholder shown in usage for non-flag values (e.g. `PATH`)
     pub value_name: Option<&'static str>,
+    /// default value of this option (only useful for keywords)
+    pub default_value: Option<&'static str>,
 }
 
 impl ArgSpec {
@@ -41,6 +43,7 @@ impl ArgSpec {
             required: false,
             help,
             value_name: None,
+            default_value: None,
         }
     }
 
@@ -54,6 +57,7 @@ impl ArgSpec {
             required: false,
             help,
             value_name: Some("VALUE"),
+            default_value: None,
         }
     }
 
@@ -67,6 +71,7 @@ impl ArgSpec {
             required: true,
             help,
             value_name: Some(value_name),
+            default_value: None,
         }
     }
 
@@ -85,6 +90,11 @@ impl ArgSpec {
     /// Sets the usage placeholder value for this argument
     pub fn value_name(mut self, v: &'static str) -> Self {
         self.value_name = Some(v);
+        self
+    }
+
+    pub fn default_value(mut self, v: &'static str) -> Self {
+        self.default_value = Some(v);
         self
     }
 
@@ -234,6 +244,13 @@ impl ArgParser {
                 }
 
                 parsed.values.insert(spec.name, arg);
+            }
+        }
+
+        // Add in uninitialized default values
+        for spec in &self.specs {
+            if !parsed.is_present(spec.name) && let Some(default) = spec.default_value {
+                parsed.values.insert(spec.name, default.to_string());
             }
         }
 

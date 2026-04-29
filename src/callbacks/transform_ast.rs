@@ -36,7 +36,7 @@ impl TransformAbstractSyntaxTreeCallbacks {
     }
 }
 
-impl<'a> rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
+impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
     fn config(&mut self, config: &mut interface::Config) {
         // use our custom loader to also instrument non-root files
         // this loader will be the one responsible for adding all stubs,

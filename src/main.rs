@@ -46,88 +46,50 @@ mod visitors;
 /// the source file path to each rustc compiler invocation.
 pub fn main() {
     let program = env::args().next().unwrap_or_else(|| "datir".to_string());
-    let parser = ArgParser::new(
-        program.clone(),
-        "DATIR: dynamic abstract type inference for Rust",
-    )
-    .arg(ArgSpec::positional(
-        "file",
-        "FILE",
-        "Path to root source file to instrument",
-    ))
-    .arg(
-        ArgSpec::keyword(
-            "output",
-            "Location of produced executable with added instrumentation",
-        )
-        .short("-o")
-        .long("--output")
-        .value_name("PATH"),
-    )
-    .arg(
-        ArgSpec::flag(
-            "release",
-            "--release",
-            "Run in release mode, skipping debug logging, and creating .decls file",
-        )
-        .short("-r"),
-    )
-    .arg(
-        ArgSpec::flag(
-            "gen-decls",
-            "--gen-decls",
-            "Generate a .decls file for the crate being instrumented.",
-        )
-        .short("-d"),
-    )
-    .arg(
-        ArgSpec::keyword(
-            "rec-depth",
-            "If gen-decls is specified, optionally specifies the depth to which to recursively expand types of values at program points",
-        )
-        .short("-rd")
-        .long("--rec-depth")
-        .value_name("INT_DEPTH"),
-    )
-    .arg(
-        ArgSpec::flag(
-            "test",
-            "--test",
-            "Run in test mode, skipping debug logging, and using regular print ATI output",
-        )
-    );
-
+    let parser = arg_init(&program);
     let args = parser.parse_env();
 
-    let file_path = args
+    // Get path to main/lib.rs file being instrumented.
+    let target_file = args
         .get_value("file")
         .expect("parser guarantees `file` is present")
         .to_string();
+    let target_path = std::path::PathBuf::from(&target_file);
 
-    let mut config = if args.is_present("release") {
-        let output = std::path::Path::new(&file_path).with_extension("ati");
-        DatirConfig::release(output)
-    } else if args.is_present("test") {
-        DatirConfig::test()
+    // Generate / parse related .decls file.
+    let decls_file = if let Some(path) = args.get_value("decls-path") {
+        let decls_path = std::path::PathBuf::from(path);
+        match DeclsFile::from_decls_file(&decls_path) {
+            Ok(file) => file,
+            Err(e) => panic!(
+                "Unable to parse in decls file located at {decls_path:?}, failed with error: {e:?}"
+            ),
+        }
     } else {
-        DatirConfig::debug()
-    };
-
-    let input_path = std::path::PathBuf::from(&file_path);
-    // FIXME: it could be worth it to always generate a minimal decls with rec depth 0, just to have ppt names
-    // to check against. we require that the source files are present already to be able to instrument
-    // anything after all. Rethink what flags are exposed.
-    config.decls_file = args.is_present("gen-decls").then(|| {
-        let depth = args.get_value("rec-depth").map(|depth| {
-            depth
-                .parse::<usize>()
+        let depth = (!args.is_present("test")).then(|| {
+            let d = args
+                .get_value("rec-depth")
+                .expect("Rec Depth did not have a value (even though it is default specified)");
+            d.parse::<usize>()
                 .expect("Unable to interpret rec-depth as an integer.")
         });
 
-        DeclsFile::from_source_file(&input_path, depth)
-    });
+        DeclsFile::from_source_file(&target_path, depth)
+    };
 
-    let mut compiler_args = vec![program, file_path];
+    // Construct config based on mode.
+    let config = if let Some(dir_path) = args.get_value("release") {
+        // FIXME: CLEAR AND CREATE DIR AT dir_path IF NECESSARY
+        let output = std::path::PathBuf::from(dir_path);
+        DatirConfig::release(decls_file, output)
+    } else if args.is_present("test") {
+        DatirConfig::test(decls_file)
+    } else {
+        DatirConfig::debug(decls_file)
+    };
+
+    // Construct arguments to pass to rustc
+    let mut compiler_args = vec![program, target_file];
     if let Some(output) = args.get_value("output") {
         compiler_args.push(format!("-o{output}"));
     }
@@ -149,14 +111,69 @@ pub fn main() {
     );
     rustc_driver::run_compiler(&compiler_args, &mut cbs);
 
-    if args.is_present("gen-decls") {
-        // output the decls file
+    if !args.is_present("decls-path") {
+        // output the decls file if we didnt parse one in.
         config
-            .as_ref()
             .decls_file
-            .as_ref()
-            .expect("generated a decls file, but then was unable to find it for writing.")
-            .write_to_file(&input_path.with_extension("decls"))
+            .write_to_file(&target_path.with_extension("decls"))
             .expect("unable to write decls file to disk");
     }
+}
+
+fn arg_init(program_name: &str) -> ArgParser {
+    let parser = ArgParser::new(
+        program_name,
+        "DATIR: dynamic abstract type inference for Rust",
+    )
+    .arg(ArgSpec::positional(
+        "file",
+        "FILE",
+        "Path to root source file to instrument",
+    ))
+    .arg(
+        ArgSpec::keyword(
+            "output",
+            "Location of produced executable with added instrumentation",
+        )
+        .short("-o")
+        .long("--output")
+        .value_name("PATH"),
+    )
+    .arg(
+        ArgSpec::keyword(
+            "release",
+            "Run in release mode, skipping debug logging, also creating .ati files\
+             whenever the output binary is executed in the directory pointed to by ATI_OUT_DIR_PATH",
+        )
+        .long("--release")
+        .short("-r")
+        .value_name("ATI_OUT_DIR_PATH")
+    )
+    .arg(
+        ArgSpec::keyword(
+            "decls-path",
+            "Rather than regenerating a decls file, parse in an existing one specified by PATH.",
+        )
+        .short("-d")
+        .long("--decls-path")
+        .value_name("PATH"),
+    )
+    .arg(
+        ArgSpec::keyword(
+            "rec-depth",
+            "The recursive depth with which to expand all variables at each program point. \
+             Defaults to 3. Only useful if --decls-path is left unspecified ",
+        )
+        .short("-rd")
+        .long("--rec-depth")
+        .value_name("INT_DEPTH")
+        .default_value("3"),
+    )
+    .arg(ArgSpec::flag(
+        "test",
+        "--test",
+        "Run in test mode, skipping debug logging, and using regular print ATI output",
+    ));
+
+    parser
 }

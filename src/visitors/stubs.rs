@@ -8,6 +8,7 @@
  * that makes it unique.
 */
 use decls_gen::decls::RETURN_VAR_NAME;
+use decls_gen::ProgramPoint;
 use rustc_ast::mut_visit::{self, MutVisitor};
 use rustc_ast::{self as ast};
 use rustc_ast_pretty::pprust;
@@ -141,6 +142,17 @@ fn generate_stubs_in_mod(
                 // module
                 new_items.push(inner_item);
 
+                // EXIT-ppt liveness will determine which formals get bound at the
+                // exit site. Pass 1 already validated existence of both ppts.
+                let enter_ppt = datir_config
+                    .decls_file
+                    .enter_ppt(&entry.base_ppt_name)
+                    .expect("ENTER ppt missing.");
+                let exit_ppt = datir_config
+                    .decls_file
+                    .exit_ppt(&entry.base_ppt_name)
+                    .expect("EXIT ppt missing");
+
                 // construct the "stub code", and insert it where the original body was.
                 let wrapper_src = build_fn_wrapper_block(
                     datir_config,
@@ -149,6 +161,8 @@ fn generate_stubs_in_mod(
                     &inner_name,
                     &decl.inputs,
                     &decl.output,
+                    enter_ppt,
+                    exit_ppt,
                 );
                 let parsed_wrapper = common::parse_expr(psess, wrapper_src);
                 let ast::ExprKind::Block(new_block, _) = parsed_wrapper.kind else {
@@ -280,6 +294,17 @@ fn generate_stubs_in_mod(
                     ));
                     taken_bodies.push(orig_body);
 
+                    // EXIT-ppt liveness will determine which formals get bound at
+                    // the exit site (e.g. owned `self` is dead at exit unless Copy).
+                    let enter_ppt = datir_config
+                        .decls_file
+                        .enter_ppt(&entry.base_ppt_name)
+                        .expect("ENTER ppt missing — should have been validated in pass 1");
+                    let exit_ppt = datir_config
+                        .decls_file
+                        .exit_ppt(&entry.base_ppt_name)
+                        .expect("EXIT ppt missing — should have been validated in pass 1");
+
                     // replace the existing method body with the stub code,
                     // the code that creates ENTER/EXIT points, and calls
                     // the inner function inside of it.
@@ -288,6 +313,8 @@ fn generate_stubs_in_mod(
                         &inner_name,
                         &decl.inputs,
                         &decl.output,
+                        enter_ppt,
+                        exit_ppt,
                     );
                     let parsed_wrapper = common::parse_expr(psess, wrapper_src);
                     let ast::ExprKind::Block(new_block, _) = parsed_wrapper.kind else {
@@ -594,9 +621,15 @@ fn get_param_name(param: &ast::Param) -> String {
 }
 
 /// Generates bind statements for parameters against a site variable.
+///
+/// Skips any formal whose `VariableDecl` in `ppt` is tagged
+/// `constant UNINITIALIZED`. At ENTER sites this is a no-op since formals
+/// have not yet been moved/dropped. At EXIT sites this drops the dead
+/// formals so we don't read moved-out values.
 fn create_param_binds<'a>(
     site_name: &str,
     params: impl Iterator<Item = &'a ast::Param>,
+    ppt: &ProgramPoint,
 ) -> Vec<String> {
     params
         .filter(|param| {
@@ -609,11 +642,29 @@ fn create_param_binds<'a>(
                     | ast::TyKind::Path(_, _)
             )
         })
-        .map(|param| {
+        .filter_map(|param| {
             let var_name = get_param_name(param);
-            format!(r#"{var_name}.bind(&mut {site_name}, "{var_name}");"#)
+            if is_dead(ppt, &var_name) {
+                return None;
+            }
+            Some(format!(
+                r#"{var_name}.bind(&mut {site_name}, "{var_name}");"#
+            ))
         })
         .collect()
+}
+
+/// Returns true iff `ppt`'s `VariableDecl` for `formal` is tagged
+/// `constant UNINITIALIZED`. Panics if the formal is missing from the ppt.
+fn is_dead(ppt: &ProgramPoint, formal: &str) -> bool {
+    ppt.var_decl(formal.to_string())
+        .unwrap_or_else(|| {
+            panic!(
+                "stub generation: ppt is missing VariableDecl for formal `{formal}` \
+                 — pass 1 should have rejected this; DATIR/decls-gen drift?"
+            )
+        })
+        .is_uninit()
 }
 
 // ========== Self-path qualifier ==========
@@ -697,13 +748,14 @@ impl<'a> MutVisitor for SelfPathQualifier<'a> {
 
 ////////////////////// Wrapper / Inner Builders //////////////////////////
 
-/// Body for a free fn's wrapper. The wrapper opens an
-/// ENTER site with each input bound, calls `inner_name(args)`, then opens
-/// an EXIT site with the return bound. This block should replace the user fn's
-/// body. Fn visibility and calling-convention attrs are intentionally unchanged.
+/// Body for a free fn's wrapper, in the single-exit-site flow:
+/// 1. open ENTER, bind every formal, update;
+/// 2. call `inner_name(args)`;
+/// 3. open EXIT, bind only formals still live at exit (per the EXIT ppt's
+///    `is_uninit()` tags) and the return value when non-unit, update.
 ///
-/// Special-cased for fn_name == "main", no param binds,
-/// no return value to bind, and the analysis report is produced at the end.
+/// Special-cased for fn_name == "main": no param binds, no return value to
+/// bind, and the analysis report is produced after the EXIT site update.
 fn build_fn_wrapper_block(
     config: &DatirConfig,
     base_ppt_name: &str,
@@ -711,17 +763,19 @@ fn build_fn_wrapper_block(
     inner_name: &str,
     inputs: &[ast::Param],
     output: &ast::FnRetTy,
+    enter_ppt: &ProgramPoint,
+    exit_ppt: &ProgramPoint,
 ) -> String {
     let passed = inputs
         .iter()
         .map(get_param_name)
         .collect::<Vec<_>>()
         .join(", ");
-    let enter_binds = create_param_binds("site_enter", inputs.iter()).join("\n");
-    let exit_binds = create_param_binds("site_exit", inputs.iter()).join("\n");
+    let enter_binds = create_param_binds("site_enter", inputs.iter(), enter_ppt).join("\n");
+    let exit_binds = create_param_binds("site_exit", inputs.iter(), exit_ppt).join("\n");
 
     if fn_name == "main" {
-        let report_fmt = if let Some(output_file_name) = &config.output_decls_format {
+        let report_fmt = if let Some(output_file_name) = &config.ati_output_dir {
             format!("produce_decls(\"{}\")", output_file_name.to_str().unwrap())
         } else {
             "report()".to_string()
@@ -729,13 +783,13 @@ fn build_fn_wrapper_block(
 
         return format!(
             r#"{{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::ENTER");
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
-                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-
                 {inner_name}();
+
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::EXIT");
+                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
                 ATI_ANALYSIS.lock().unwrap().{report_fmt};
             }}"#
@@ -745,17 +799,14 @@ fn build_fn_wrapper_block(
     match output {
         ast::FnRetTy::Ty(_) => format!(
             r#"{{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::ENTER");
                 {enter_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
-                {exit_binds}
-                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-
                 let res = {inner_name}({passed});
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::EXIT");
+                {exit_binds}
                 res.bind(&mut site_exit, "{RETURN_VAR_NAME}");
                 ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
@@ -764,17 +815,14 @@ fn build_fn_wrapper_block(
         ),
         ast::FnRetTy::Default(_) => format!(
             r#"{{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::ENTER");
                 {enter_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
-                {exit_binds}
-                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-
                 {inner_name}({passed});
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::EXIT");
+                {exit_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
             }}"#
         ),
@@ -783,12 +831,16 @@ fn build_fn_wrapper_block(
 
 /// Similar to `build_fn_wrapper_block` but for methods.
 /// A small difference: the self parameter needs to be correctly
-/// used when invoking the inner function
+/// used when invoking the inner function. The receiver is bound under the
+/// name `"self"`, and is filtered by liveness in the same way as other
+/// formals (an owned non-Copy `self` is dead at exit and gets skipped).
 fn build_method_wrapper_block(
     base_ppt_name: &str,
     inner_name: &str,
     inputs: &[ast::Param],
     output: &ast::FnRetTy,
+    enter_ppt: &ProgramPoint,
+    exit_ppt: &ProgramPoint,
 ) -> String {
     let receiver = determine_receiver_kind(inputs);
 
@@ -810,9 +862,12 @@ fn build_method_wrapper_block(
         _ => format!("self.{inner_name}({passed})"),
     };
 
-    let self_bind = |site_name: &str| -> String {
+    let self_bind = |site_name: &str, ppt: &ProgramPoint| -> String {
+        if matches!(receiver, ReceiverKind::None) || is_dead(ppt, "self") {
+            return String::new();
+        }
         match receiver {
-            ReceiverKind::None => String::new(),
+            ReceiverKind::None => unreachable!(),
             ReceiverKind::Value => format!(r#"self.bind(&mut {site_name}, "self");"#),
             ReceiverKind::Ref | ReceiverKind::RefMut => {
                 format!(r#"(*self).bind(&mut {site_name}, "self");"#)
@@ -820,14 +875,22 @@ fn build_method_wrapper_block(
         }
     };
 
-    let enter_binds = std::iter::once(self_bind("site_enter"))
-        .chain(create_param_binds("site_enter", non_self.iter().copied()))
+    let enter_binds = std::iter::once(self_bind("site_enter", enter_ppt))
+        .chain(create_param_binds(
+            "site_enter",
+            non_self.iter().copied(),
+            enter_ppt,
+        ))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
 
-    let exit_binds = std::iter::once(self_bind("site_exit"))
-        .chain(create_param_binds("site_exit", non_self.iter().copied()))
+    let exit_binds = std::iter::once(self_bind("site_exit", exit_ppt))
+        .chain(create_param_binds(
+            "site_exit",
+            non_self.iter().copied(),
+            exit_ppt,
+        ))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
@@ -835,17 +898,14 @@ fn build_method_wrapper_block(
     match output {
         ast::FnRetTy::Ty(_) => format!(
             r#"{{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::ENTER");
                 {enter_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
-                {exit_binds}
-                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-
                 let res = {call_expr};
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::EXIT");
+                {exit_binds}
                 res.bind(&mut site_exit, "{RETURN_VAR_NAME}");
                 ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
 
@@ -854,17 +914,14 @@ fn build_method_wrapper_block(
         ),
         ast::FnRetTy::Default(_) => format!(
             r#"{{
-                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::ENTER");
+                let mut site_enter = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::ENTER");
                 {enter_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_enter);
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
-                {exit_binds}
-                ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
-
                 {call_expr};
 
-                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site("{base_ppt_name}:::EXIT");
+                let mut site_exit = ATI_ANALYSIS.lock().unwrap().get_site(r"{base_ppt_name}:::EXIT");
+                {exit_binds}
                 ATI_ANALYSIS.lock().unwrap().update_site(site_exit);
             }}"#
         ),

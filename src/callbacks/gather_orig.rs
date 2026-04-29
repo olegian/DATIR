@@ -11,7 +11,7 @@ use rustc_interface::interface;
 use rustc_middle::ty::TyCtxt;
 use std::sync::Arc;
 
-use decls_gen::DeclsFile;
+use decls_gen::{DeclsFile, VarIdent};
 
 use crate::{
     common::DatirConfig,
@@ -43,9 +43,11 @@ impl GatherAtiInfo {
 
     /// For the given function identified by `local_def_id`, get the base_ppt_name
     /// which corresponds to it (i.e. everything before :::{ENTER|EXIT|EXITNN} in
-    /// the decls file). If the DATIR configuration loaded a decls file, check 
-    /// that a matching ppt exists in the decls file. Store the fn ident, def id,
-    /// and base_ppt_name in FirstPassInfo.
+    /// the decls file). Validate that the loaded decls file contains the matching
+    /// ENTER and EXIT program points, that every formal parameter has a
+    /// `VariableDecl` on both, and that any non-unit return value has a return
+    /// `VariableDecl` on EXIT. Store the fn ident, def id, and base_ppt_name in
+    /// FirstPassInfo.
     fn record_fn<'tcx>(
         &mut self,
         tcx: TyCtxt<'tcx>,
@@ -54,17 +56,71 @@ impl GatherAtiInfo {
         type_key: Option<TypeKey>,
     ) {
         let base_ppt_name = DeclsFile::ppt_base_name(tcx, local_def_id);
+        let decls_file = &self.config.decls_file;
 
-        if let Some(decls_file) = self.config.decls_file.as_ref() {
-            // ppts_for() does a BTreeMap range query for ENTER/EXIT/EXITNN, we
-            // just check if there is at least some ppt with this base name
-            if decls_file.ppts_for(&base_ppt_name).is_empty() {
+        // make sure the decls file has an appropriate enter and exit ppt 
+        // defined for this base_ppt_name. Otherwise, the instrumented 
+        // binary is going to emit comparability information that is impossible
+        // to associate with any ppt.
+        let enter_ppt = decls_file.enter_ppt(&base_ppt_name).unwrap_or_else(|| {
+            panic!(
+                "DATIR/decls-gen is out of sync: no ENTER program point in the .decls \
+                 file matches base ppt name `{base_ppt_name}` for {local_def_id:?}."
+            )
+        });
+        let exit_ppt = decls_file.exit_ppt(&base_ppt_name).unwrap_or_else(|| {
+            panic!(
+                "DATIR/decls-gen is out of sync: no EXIT program point in the .decls \
+                 file matches base ppt name `{base_ppt_name}` for {local_def_id:?}."
+            )
+        });
+
+        // Make sure that all formals/return values are properly included in the DeclsFile too,
+        // at least by top-level name. 
+        // FIXME: is it worth it to recrusively descend here and check children?
+        let body = tcx.hir_body_owned_by(local_def_id);
+        for param in body.params.iter() {
+            let formal = param
+                .pat
+                .simple_ident()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Formal parameter of `{base_ppt_name}` is not a simple ident pattern."
+                    )
+                })
+                .name
+                .to_string();
+
+            if enter_ppt
+                .var_decl_lookup(tcx, VarIdent::Local(formal.clone()))
+                .is_none()
+            {
                 panic!(
-                    "DATIR/decls-gen is out of sync: no program point in the .decls file \
-                     matches base ppt name `{base_ppt_name}` for {local_def_id:?}. The \
-                     gather pass and decls-gen must visit the same set of fn/method items."
+                    "DATIR/decls-gen is out of sync: ENTER ppt `{base_ppt_name}:::ENTER` \
+                     is missing a VariableDecl for formal `{formal}`."
                 );
             }
+            if exit_ppt
+                .var_decl_lookup(tcx, VarIdent::Local(formal.clone()))
+                .is_none()
+            {
+                panic!(
+                    "DATIR/decls-gen is out of sync: EXIT ppt `{base_ppt_name}:::EXIT` \
+                     is missing a VariableDecl for formal `{formal}`."
+                );
+            }
+        }
+
+        let return_ty = tcx
+            .fn_sig(local_def_id)
+            .instantiate_identity()
+            .skip_binder()
+            .output();
+        if !return_ty.is_unit() && exit_ppt.var_decl_lookup(tcx, VarIdent::Return).is_none() {
+            panic!(
+                "DATIR/decls-gen is out of sync: EXIT ppt `{base_ppt_name}:::EXIT` is \
+                 missing a VariableDecl for the return value of {local_def_id:?}."
+            );
         }
 
         let mod_path = mod_path_of(tcx, local_def_id);
@@ -185,7 +241,7 @@ fn hir_ty_canonical(ty: &rustc_hir::Ty<'_>) -> Option<String> {
     hir_path_canonical(path)
 }
 
-impl<'a> rustc_driver::Callbacks for GatherAtiInfo {
+impl rustc_driver::Callbacks for GatherAtiInfo {
     /// Disables everything after MIR construction
     fn config(&mut self, config: &mut interface::Config) {
         config.opts.unstable_opts.no_codegen = true;
