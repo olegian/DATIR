@@ -4,6 +4,8 @@ use std::{
     process::Command,
 };
 
+use decls_gen::vars::escape_str;
+
 /// Helpful iterators for constructing array outputs.
 /// Accepts a slice of lengths, dims, and offers the cartesian product
 /// over all dims.
@@ -69,7 +71,7 @@ const SITE_DELIM: &'static str = "---\n";
 /// /path/from/root_dir/datir/tests/simple/main.rs
 pub fn prefix_with_path_from_root(site_from_tests: &str) -> String {
     let prefix = std::env::current_dir().unwrap();
-    format!("{}/tests/{site_from_tests}", prefix.display())
+    escape_str(format!("{}/tests/{site_from_tests}", prefix.display()))
 }
 
 /// Compiles `{cwd}/{test_dir}/{file_name}.rs` with the added instrumentation
@@ -152,7 +154,9 @@ pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap
         assert_eq!(
             expected_site.len(),
             site_ati_output.len(),
-            "Expected site {site_name} has a different number of parameter mappings that observed"
+            "Expected site {site_name} has a different number of \
+            registered parameter mappings ({}) than observed ({})", 
+            expected_site.len(), site_ati_output.len()
         );
 
         let mut expected_to_actual: HashMap<&usize, &usize> = HashMap::new();

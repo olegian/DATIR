@@ -35,17 +35,18 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::foo:::EXIT",
         ))
-        .register("a.0", 0)
-        .register("a.1", 1)
-        .register("a.2", 2)
+        // a, b, c Captured by value.
+        // .register("a.0", 0)
+        // .register("a.1", 1)
+        // .register("a.2", 2)
 
-        .register("b.0", 0)
-        .register("b.1", 1)
-        .register("b.2", 2)
+        // .register("b.0", 0)
+        // .register("b.1", 1)
+        // .register("b.2", 2)
 
-        .register("c.0", 6)
-        .register("c.1", 7)
-        .register("c.2", 8)
+        // .register("c.0", 6)
+        // .register("c.1", 7)
+        // .register("c.2", 8)
 
         .register("return.0", 0)
         .register("return.1", 1)
@@ -72,17 +73,18 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::bar:::EXIT",
         ))
-        .register("a.a", 0)
-        .register("a.b", 1)
-        .register("a.c", 2)
+        // a, b, c, are captured by value.
+        // .register("a.a", 0)
+        // .register("a.b", 1)
+        // .register("a.c", 2)
 
-        .register("b.a", 0)
-        .register("b.b", 1)
-        .register("b.c", 2)
+        // .register("b.a", 0)
+        // .register("b.b", 1)
+        // .register("b.c", 2)
 
-        .register("c.a", 6)
-        .register("c.b", 7)
-        .register("c.c", 8)
+        // .register("c.a", 6)
+        // .register("c.b", 7)
+        // .register("c.c", 8)
 
         .register("return.a", 0)
         .register("return.b", 1)
@@ -112,20 +114,21 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::baz:::EXIT",
         ))
-        .register("a.a", 0)
-        .register("a.b.0", 1)
-        .register("a.b.1", 2)
-        .register("a.b.2", 3)
+        // a, b, c captured by value
+        // .register("a.a", 0)
+        // .register("a.b.0", 1)
+        // .register("a.b.1", 2)
+        // .register("a.b.2", 3)
 
-        .register("b.a", 0)
-        .register("b.b.0", 1)
-        .register("b.b.1", 2)
-        .register("b.b.2", 3)
+        // .register("b.a", 0)
+        // .register("b.b.0", 1)
+        // .register("b.b.1", 2)
+        // .register("b.b.2", 3)
 
-        .register("c.a", 8)
-        .register("c.b.0", 9)
-        .register("c.b.1", 10)
-        .register("c.b.2", 11)
+        // .register("c.a", 8)
+        // .register("c.b.0", 9)
+        // .register("c.b.1", 10)
+        // .register("c.b.2", 11)
 
         .register("return.a", 0)
         .register("return.b.0", 1)
@@ -147,11 +150,12 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::quux:::EXIT",
         ))
-        .register("a.a", 0)
-        .register("a.b", 1)
+        // a, b, captured by value.
+        // .register("a.a", 0)
+        // .register("a.b", 1)
 
-        .register("b.a", 0)
-        .register("b.b", 1)
+        // .register("b.a", 0)
+        // .register("b.b", 1)
 
         .register("return.a", 0)
         .register("return.b", 1)
@@ -173,13 +177,14 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::<NewTuple as std::ops::Add>::add:::EXIT",
         ))
-        .register("self.0", 0)
-        .register("self.1", 1)
-        .register("self.2", 2)
+        // self and rhs are captured by value
+        // .register("self.0", 0)
+        // .register("self.1", 1)
+        // .register("self.2", 2)
 
-        .register("rhs.0", 0)
-        .register("rhs.1", 1)
-        .register("rhs.2", 2)
+        // .register("rhs.0", 0)
+        // .register("rhs.1", 1)
+        // .register("rhs.2", 2)
 
         .register("return.0", 0)
         .register("return.1", 1)
@@ -202,13 +207,14 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::<NewStruct as std::ops::Mul>::mul:::EXIT"
         ))
-        .register("self.a", 0)
-        .register("self.b", 1)
-        .register("self.c", 2)
+        // self and rhs are captured by value, dropped on exit
+        // .register("self.a", 0)
+        // .register("self.b", 1)
+        // .register("self.c", 2)
 
-        .register("rhs.a", 0)
-        .register("rhs.b", 1)
-        .register("rhs.c", 2)
+        // .register("rhs.a", 0)
+        // .register("rhs.b", 1)
+        // .register("rhs.c", 2)
 
         .register("return.a", 0)
         .register("return.b", 1)
@@ -233,15 +239,18 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::<Nested as std::ops::Add>::add:::EXIT"
         ))
-        .register("self.a", 0)
-        .register("self.b.0", 1)
-        .register("self.b.1", 2)
-        .register("self.b.2", 3)
+        // self and rhs are captured by value,
+        // and therefore dropped on exit.
 
-        .register("rhs.a", 0)
-        .register("rhs.b.0", 1)
-        .register("rhs.b.1", 2)
-        .register("rhs.b.2", 3)
+        // .register("self.a", 0)
+        // .register("self.b.0", 1)
+        // .register("self.b.1", 2)
+        // .register("self.b.2", 3)
+
+        // .register("rhs.a", 0)
+        // .register("rhs.b.0", 1)
+        // .register("rhs.b.1", 2)
+        // .register("rhs.b.2", 3)
 
         .register("return.a", 0)
         .register("return.b.0", 1)
@@ -263,11 +272,12 @@ fn op_through_trait() {
         ExpectedSite::new(prefix_with_path_from_root(
             "op_through_trait/main.rs::<WithGeneric<T> as std::ops::Add>::add:::EXIT"
         ))
-        .register("self.a", 0)
-        .register("self.b", 1)
+        // self and rhs are captured by value
+        // .register("self.a", 0)
+        // .register("self.b", 1)
 
-        .register("rhs.a", 0)
-        .register("rhs.b", 1)
+        // .register("rhs.a", 0)
+        // .register("rhs.b", 1)
 
         .register("return.a", 0)
         .register("return.b", 1)

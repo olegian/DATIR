@@ -83,8 +83,9 @@ fn uses_methods() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_methods/main.rs::Counter::add_3:::EXIT",
         ))
-        .register("self.val", 0)
-        .register("self.unused", 1)
+        // self is captured by value
+        // .register("self.val", 0)
+        // .register("self.unused", 1)
         .register("unused_param", 2)
         .register("return.val", 0)
         .register("return.unused", 1),

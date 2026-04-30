@@ -26,7 +26,8 @@ fn uses_enum() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_enum/main.rs::use_color:::EXIT",
         ))
-        .register("c::Blue.0", 0)
+        // captured by value
+        // .register("c::Blue.0", 0)
         .register("scale", 0)
         .register("return", 0),
     );
@@ -45,10 +46,11 @@ fn uses_enum() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_enum/main.rs::use_point:::EXIT",
         ))
-        .register("p::D1.x", 0)
-        .register("p::D1.y", 1)
-        .register("p::D2.a", 2)
-        .register("p::D2.y", 1)
+        // p is captured by value
+        // .register("p::D1.x", 0)
+        // .register("p::D1.y", 1)
+        // .register("p::D2.a", 2)
+        // .register("p::D2.y", 1)
         .register("z", 1)
         .register("return", 1),
     );

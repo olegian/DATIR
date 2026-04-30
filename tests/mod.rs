@@ -1,3 +1,10 @@
+#![feature(rustc_private)]
+// #![feature(box_patterns)]
+// #![feature(min_specialization)]
+// #![feature(step_trait)]
+// #![feature(unsize)]
+// #![feature(coerce_unsized)]
+
 mod common;
 
 // incomplete tests

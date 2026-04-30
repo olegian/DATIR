@@ -31,15 +31,16 @@ fn uses_struct() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_struct/main.rs::func:::EXIT",
         ))
+        // s is captured by value
+        // .register("s.x", 0)
+        // .register("s.y", 0)
+        // .register("s.z.x", 2)
+        // .register("s.z.y", 3),
         .register("x", 0)
         .register("y", 0)
-        .register("s.x", 0)
-        .register("s.y", 0)
         .register("return", 0)
         .register("z", 1)
         .register("z2", 2)
-        .register("s.z.x", 2)
-        .register("s.z.y", 3),
     );
 
     expected.register_site(
@@ -56,10 +57,11 @@ fn uses_struct() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_struct/main.rs::foo:::EXIT",
         ))
-        .register("a.a", 0)
-        .register("a.b", 1)
-        .register("a.c.x", 0)
-        .register("a.c.b", 3)
+        // a is captured by value
+        // .register("a.a", 0)
+        // .register("a.b", 1)
+        // .register("a.c.x", 0)
+        // .register("a.c.b", 3)
         .register("v", 0)
         .register("return.a", 0)
         .register("return.b", 1)
@@ -85,15 +87,16 @@ fn uses_struct() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_struct/main.rs::bar:::EXIT",
         ))
-        .register("a.0", 0)
-        .register("a.1", 1)
-        .register("a.2.x", 2)
-        .register("a.2.b", 3)
+        // a and b are captured by value
+        // .register("a.0", 0)
+        // .register("a.1", 1)
+        // .register("a.2.x", 2)
+        // .register("a.2.b", 3)
 
-        .register("b.a", 4)
-        .register("b.b", 1)
-        .register("b.c.x", 4)
-        .register("b.c.b", 6)
+        // .register("b.a", 4)
+        // .register("b.b", 1)
+        // .register("b.c.x", 4)
+        // .register("b.c.b", 6)
 
         .register("return.0", 0)
         .register("return.1", 1)
@@ -115,10 +118,11 @@ fn uses_struct() {
         ExpectedSite::new(prefix_with_path_from_root(
             "uses_struct/main.rs::baz:::EXIT",
         ))
-        .register("a.a", 0)
-        .register("a.b", 1)
-        .register("a.c", 0) // a.c got reassigned, to a.a + a.d + 2*v. it should now be in set 0?
-        .register("a.d", 0) // ^ this is a problem w.r.t. how site management is done, specifically when variables are bound to exit sites.
+        // a was captured by value. DOES THAT ADDRESS THE BELOW PROBLEM THOUGH? a.c is ultimately still "live"
+        // .register("a.a", 0)
+        // .register("a.b", 1)
+        // .register("a.c", 0) // a.c got reassigned, to a.a + a.d + 2*v. it should now be in set 0?
+        // .register("a.d", 0) // ^ this is a problem w.r.t. how site management is done, specifically when variables are bound to exit sites.
         .register("v", 0), //  it's related to ownership, which is the most interesting part. Should formals that ar ecaptured by value
                            //  just outright be removed from the exit site? they don't exist after the function runs...
                            //  but also, in this exact example we capture a struct by value, that contains a reference to a value that
@@ -127,14 +131,14 @@ fn uses_struct() {
 
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
-            "uses_struct/main.rs::struct_defs.Inner.new:::ENTER",
+            "uses_struct/struct_defs.rs::struct_defs::Inner::new:::ENTER",
         ))
         .register("x", 0)
         .register("b", 1),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
-            "uses_struct/main.rs::struct_defs.Inner.new:::EXIT",
+            "uses_struct/struct_defs.rs::struct_defs::Inner::new:::EXIT",
         ))
         .register("x", 0)
         .register("b", 1)
@@ -144,7 +148,7 @@ fn uses_struct() {
 
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
-            "uses_struct/main.rs::struct_defs.Inner.add_x:::ENTER",
+            "uses_struct/struct_defs.rs::struct_defs::Inner::add_x:::ENTER",
         ))
         .register("self.x", 0)
         .register("self.b", 1)
@@ -152,7 +156,7 @@ fn uses_struct() {
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
-            "uses_struct/main.rs::struct_defs.Inner.add_x:::EXIT",
+            "uses_struct/struct_defs.rs::struct_defs::Inner::add_x:::EXIT",
         ))
         .register("self.x", 0)
         .register("self.b", 1)
