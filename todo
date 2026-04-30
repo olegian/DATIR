@@ -14,9 +14,7 @@
 4/29
 AFTER LIVENESS SENSITIVE EXIT POINTS, BROKEN TESTS:
     array_with_slices::array_with_slices
-    - Due to ownership semantics of TaggedRefs
-    - Probably do &T --> &TaggedRef<T>  --> &(&Id, &T)
-      rather than &T --> TaggedRef<T> --> (&Id, &T) to preserve ownership
+    - Due to ownership semantics of TaggedRefs, need to allow reborrows!!!!
 
     assign_compound::assign_compound
     - Been broke, check this later

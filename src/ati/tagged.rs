@@ -74,6 +74,33 @@ impl<'a, T> TaggedRefMut<'a, T> {
     }
 }
 
+// Projections that preserve the Id while carving a sub-reference out of the
+// inner value (slice indexing, field access, etc.). Both `map` variants
+// consume `self`, so the closure receives the full lifetime `'a`.
+impl<'a, T: ?Sized> TaggedRef<'a, T> {
+    pub fn map<U: ?Sized>(self, f: impl FnOnce(&'a T) -> &'a U) -> TaggedRef<'a, U> {
+        TaggedRef(self.0, f(self.1))
+    }
+}
+
+impl<'a, T: ?Sized> TaggedRefMut<'a, T> {
+    pub fn map<U: ?Sized>(
+        self,
+        f: impl FnOnce(&'a mut T) -> &'a mut U,
+    ) -> TaggedRefMut<'a, U> {
+        TaggedRefMut(self.0, f(self.1))
+    }
+
+    /// Manual analog of Rust's implicit `&mut` reborrow. `TaggedRefMut` is
+    /// move-only (must not be Copy/Clone to preserve unique-borrow
+    /// semantics), so every value-position use of a `TaggedRefMut` binding
+    /// other than the last needs `.reborrow()` where the source code would
+    /// have implicitly reborrowed.
+    pub fn reborrow(&mut self) -> TaggedRefMut<'_, T> {
+        TaggedRefMut(self.0, &mut *self.1)
+    }
+}
+
 impl<'a, T: ?Sized> std::ops::Deref for TaggedRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
@@ -131,15 +158,14 @@ impl<'a, T: ?Sized + std::fmt::Display> std::fmt::Display for TaggedRefMut<'a, T
 }
 
 // Automatic Unsized coercion: `TaggedRef<[T; N]>` -> `TaggedRef<[T]>` (and same for Mut).
-impl<'a, T, const N: usize, U> std::ops::CoerceUnsized<TaggedRef<'a, [U]>> for TaggedRef<'a, [T; N]> where
-    [T; N]: std::marker::Unsize<[U]>
+// `U: ?Sized` because the *target* of the coercion is the unsized form (e.g. `[T]`).
+impl<'a, T: std::marker::Unsize<U>, U: ?Sized> std::ops::CoerceUnsized<TaggedRef<'a, U>>
+    for TaggedRef<'a, T>
 {
 }
 
-impl<'a, T, const N: usize, U> std::ops::CoerceUnsized<TaggedRefMut<'a, [U]>>
-    for TaggedRefMut<'a, [T; N]>
-where
-    [T; N]: std::marker::Unsize<[U]>,
+impl<'a, T: std::marker::Unsize<U>, U: ?Sized> std::ops::CoerceUnsized<TaggedRefMut<'a, U>>
+    for TaggedRefMut<'a, T>
 {
 }
 

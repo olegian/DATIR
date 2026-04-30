@@ -160,104 +160,12 @@ impl<T> TaggedSliceIndex<T> for TaggedRangeFull {
     }
 }
 
-/// Implementors of this trait are receivers of slice operations, e.g. `array[range]`
-/// array implements TaggedSliceable. This allows calling .raw_subslice(range.into_raw())
-/// to slice into any slice/array with any tagged range.
-pub trait TaggedSliceable<'a, T> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>;
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>;
-}
-
-// allows slicing [T; N]
-impl<'a, T, const N: usize> TaggedSliceable<'a, T> for TaggedArray<T, N> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&self.0, &self.1[range])
-    }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&mut self.0, &mut self.1[range])
-    }
-}
-
-// allows slicing TaggedRef<[T]>
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRef<'slice, [T]> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&self.0, &self.1[range])
-    }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T]>)");
-    }
-}
-
-// allows slicing TaggedRefMut<[T]>
-impl<'a, 'slice, T> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T]> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&self.0, &self.1[range])
-    }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&mut self.0, &mut self.1[range])
-    }
-}
-
-// allows slicing TaggedRef<[T; N]> (post-instrumentation form of `&[T; N]`)
-impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRef<'slice, [T; N]> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&self.0, &self.1[range])
-    }
-    fn raw_subslice_mut<'b, R>(&'b mut self, _range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        panic!("Tried to get a mutable subslice behind an immutable slice (TaggedRef<[T; N]>)");
-    }
-}
-
-// allows slicing TaggedRefMut<[T; N]> (post-instrumentation form of `&mut [T; N]`)
-impl<'a, 'slice, T, const N: usize> TaggedSliceable<'a, T> for TaggedRefMut<'slice, [T; N]> {
-    fn raw_subslice<'b, R>(&'b self, range: R) -> (&'b Id, &'b [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&self.0, &self.1[range])
-    }
-    fn raw_subslice_mut<'b, R>(&'b mut self, range: R) -> (&'b mut Id, &'b mut [T])
-    where
-        R: std::slice::SliceIndex<[T], Output = [T]>,
-    {
-        (&mut self.0, &mut self.1[range])
-    }
-}
-
-// Inherent `.subslice(range)` / `.subslice_mut(range)` helpers. These exist
-// alongside `ATI::track_subslice` / `track_subslice_mut` so pass 2 can emit
-// method-style calls that respect the receiver's outer lifetime for
-// TaggedRef / TaggedRefMut inputs (where `&arr` would only expose the local
-// binding's lifetime). Owned containers (TaggedArray) still use `&self` and
-// borrow from the local.
+// Inherent `.subslice(range)` / `.subslice_mut(range)` helpers emitted by
+// pass 2 for `&recv[range]` / `&mut recv[range]`. The single Tagged*Ref
+// impls cover both `[T]` and `[T; N]` inner shapes via `Index`/`IndexMut`
+// because std implements `Index<I>` for both when `I: SliceIndex<[T]>`.
+// Owned containers (TaggedArray) borrow from the local through `&self` and
+// stay separate.
 impl<T, const N: usize> TaggedArray<T, N> {
     pub fn subslice<R>(&self, range: R) -> TaggedRef<'_, [T]>
     where
@@ -283,9 +191,10 @@ impl<T, const N: usize> TaggedArray<T, N> {
     }
 }
 
-impl<'slice, T, const N: usize> TaggedRef<'slice, [T; N]> {
-    pub fn subslice<R>(self, range: R) -> TaggedRef<'slice, [T]>
+impl<'a, S: ?Sized> TaggedRef<'a, S> {
+    pub fn subslice<T, R>(self, range: R) -> TaggedRef<'a, [T]>
     where
+        S: std::ops::Index<R::Raw, Output = [T]>,
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
@@ -293,13 +202,14 @@ impl<'slice, T, const N: usize> TaggedRef<'slice, [T; N]> {
             .lock()
             .unwrap()
             .union_and_get_id(self.0, &range_id);
-        TaggedRef(self.0, &self.1[range.into_raw()])
+        self.map(|s| &s[range.into_raw()])
     }
 }
 
-impl<'slice, T> TaggedRef<'slice, [T]> {
-    pub fn subslice<R>(self, range: R) -> TaggedRef<'slice, [T]>
+impl<'a, S: ?Sized> TaggedRefMut<'a, S> {
+    pub fn subslice_mut<T, R>(self, range: R) -> TaggedRefMut<'a, [T]>
     where
+        S: std::ops::IndexMut<R::Raw, Output = [T]>,
         R: TaggedSliceIndex<T>,
     {
         let range_id = range.id();
@@ -307,34 +217,6 @@ impl<'slice, T> TaggedRef<'slice, [T]> {
             .lock()
             .unwrap()
             .union_and_get_id(self.0, &range_id);
-        TaggedRef(self.0, &self.1[range.into_raw()])
-    }
-}
-
-impl<'slice, T, const N: usize> TaggedRefMut<'slice, [T; N]> {
-    pub fn subslice_mut<R>(self, range: R) -> TaggedRefMut<'slice, [T]>
-    where
-        R: TaggedSliceIndex<T>,
-    {
-        let range_id = range.id();
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(self.0, &range_id);
-        TaggedRefMut(self.0, &mut self.1[range.into_raw()])
-    }
-}
-
-impl<'slice, T> TaggedRefMut<'slice, [T]> {
-    pub fn subslice_mut<R>(self, range: R) -> TaggedRefMut<'slice, [T]>
-    where
-        R: TaggedSliceIndex<T>,
-    {
-        let range_id = range.id();
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(self.0, &range_id);
-        TaggedRefMut(self.0, &mut self.1[range.into_raw()])
+        self.map(|s| &mut s[range.into_raw()])
     }
 }

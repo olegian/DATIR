@@ -620,6 +620,36 @@ fn get_param_name(param: &ast::Param) -> String {
     }
 }
 
+/// True if `ty`'s outer wrapper is `TaggedRefMut<...>`. Used by the wrapper
+/// to decide whether the formal needs a `.reborrow()` when forwarded to the
+/// inner fn — `TaggedRefMut` is move-only, but the binding still has to live
+/// for the EXIT-site binds.
+fn is_tagged_ref_mut(ty: &ast::Ty) -> bool {
+    let ast::TyKind::Path(_, path) = &ty.kind else {
+        return false;
+    };
+    path.segments
+        .last()
+        .map(|seg| seg.ident.name.as_str() == "TaggedRefMut")
+        .unwrap_or(false)
+}
+
+/// Source for the inner-fn argument list: each TaggedRefMut formal forwards
+/// as `name.reborrow()`; everything else forwards as `name`.
+fn build_inner_call_args<'a>(params: impl Iterator<Item = &'a ast::Param>) -> String {
+    params
+        .map(|p| {
+            let name = get_param_name(p);
+            if is_tagged_ref_mut(&p.ty) {
+                format!("{name}.reborrow()")
+            } else {
+                name
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Generates bind statements for parameters against a site variable.
 ///
 /// Skips any formal whose `VariableDecl` in `ppt` is tagged
@@ -766,11 +796,7 @@ fn build_fn_wrapper_block(
     enter_ppt: &ProgramPoint,
     exit_ppt: &ProgramPoint,
 ) -> String {
-    let passed = inputs
-        .iter()
-        .map(get_param_name)
-        .collect::<Vec<_>>()
-        .join(", ");
+    let passed = build_inner_call_args(inputs.iter());
     let enter_binds = create_param_binds("site_enter", inputs.iter(), enter_ppt).join("\n");
     let exit_binds = create_param_binds("site_exit", inputs.iter(), exit_ppt).join("\n");
 
@@ -850,12 +876,7 @@ fn build_method_wrapper_block(
     }
     let non_self: Vec<&ast::Param> = inputs_iter.collect();
 
-    let passed = non_self
-        .iter()
-        .copied()
-        .map(get_param_name)
-        .collect::<Vec<_>>()
-        .join(", ");
+    let passed = build_inner_call_args(non_self.iter().copied());
 
     let call_expr = match receiver {
         ReceiverKind::None => format!("Self::{inner_name}({passed})"),

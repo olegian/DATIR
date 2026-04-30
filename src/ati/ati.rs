@@ -23,7 +23,7 @@
 
 use crate::ati::{
     collection::Collect,
-    index::{TaggedSliceIndex, TaggedSliceable},
+    index::TaggedSliceIndex,
     tagged::{Id, Tagged, TaggedRef, TaggedRefMut, Tagger},
 };
 
@@ -379,41 +379,6 @@ where {
         array: &'a mut Tagged<[T; N]>,
     ) -> TaggedRefMut<'a, [T]> {
         TaggedRefMut(&mut array.0, &mut array.1)
-    }
-
-    /// Build a `TaggedRef<[T]>` viewing a subrange of `collection`. The
-    /// collection's own Id is reused for the subslice view. The UF merge
-    /// unifies the range and collection Id's leader, so any later tag
-    /// operations on either borrow see the same AT
-    pub fn track_subslice<'a, T, S, R>(collection: &'a S, range: R) -> TaggedRef<'a, [T]>
-    where
-        S: TaggedSliceable<'a, T> + 'a,
-        R: TaggedSliceIndex<T>,
-    {
-        let range_id = range.id();
-        let (collection_id, subslice) = collection.raw_subslice(range.into_raw());
-
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(collection_id, &range_id);
-        TaggedRef(collection_id, subslice)
-    }
-
-    /// Mutable-borrow counterpart of [`track_subslice`].
-    pub fn track_subslice_mut<'a, T, S, R>(collection: &'a mut S, range: R) -> TaggedRefMut<'a, [T]>
-    where
-        S: TaggedSliceable<'a, T> + 'a,
-        R: TaggedSliceIndex<T>,
-    {
-        let range_id = range.id();
-        let (collection_id, subslice) = collection.raw_subslice_mut(range.into_raw());
-
-        ATI_ANALYSIS
-            .lock()
-            .unwrap()
-            .union_and_get_id(collection_id, &range_id);
-        TaggedRefMut(collection_id, subslice)
     }
 
     pub fn track_range<T>(start: Tagged<T>, end: Tagged<T>) -> Tagged<std::ops::Range<Tagged<T>>> {
