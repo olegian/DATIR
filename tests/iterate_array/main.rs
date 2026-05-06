@@ -114,6 +114,10 @@ fn enumerate_iter(arr: &mut [u32], val: u32) -> usize {
     for (i, elem) in arr.iter_mut().enumerate() {
         acc += i;
         *elem += val;
+
+        if i == 2 {
+            break;
+        }
     }
 
     acc

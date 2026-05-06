@@ -171,7 +171,7 @@ fn op_through_trait() {
 
         .register("rhs.0", 0)  // we use this + op multiple times, on enter then
         .register("rhs.1", 1)  //  we should see corresponding self/rhs already partitioned
-        .register("rhs.2", 2),
+        .register("rhs.2", 4),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
@@ -188,7 +188,7 @@ fn op_through_trait() {
 
         .register("return.0", 0)
         .register("return.1", 1)
-        .register("return.2", 2),
+        .register("return.2", 3),
     );
 
     expected.register_site(

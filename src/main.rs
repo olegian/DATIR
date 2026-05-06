@@ -39,8 +39,10 @@ mod args;
 mod callbacks;
 mod common;
 mod file_loaders;
-mod types;
-mod visitors;
+
+mod gather;
+mod instrument;
+mod codegen;
 
 /// Entry-point. Parses DATIR's own command-line options, then forwards just
 /// the source file path to each rustc compiler invocation.

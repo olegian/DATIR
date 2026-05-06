@@ -16,8 +16,8 @@ fn simple() {
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root("simple/main.rs::foo:::ENTER"))
             .register("x", 0)
-            .register("y", 1)
-            .register("z", 2),
+            .register("y", 0)
+            .register("z", 1),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root("simple/main.rs::foo:::EXIT"))

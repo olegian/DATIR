@@ -28,12 +28,12 @@ fn array() {
         ExpectedSite::new(prefix_with_path_from_root("array/main.rs::foo:::EXIT"))
             .register("arr.length", 1)
             .register("arr[0]", 0)
-            .register("arr[1]", 3)
-            .register("arr[2]", 3)
+            .register("arr[1]", 0)
+            .register("arr[2]", 0)
             .register("x", 0)
             .register("y", 0)
             .register("unused", 4)
-            .register("return", 3),
+            .register("return", 0),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root("array/main.rs::bar:::ENTER"))

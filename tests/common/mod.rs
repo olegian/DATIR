@@ -117,68 +117,127 @@ pub fn compile_and_execute(path: &Path) -> String {
 /// performing a partition comparison, alongside making sure the right number
 /// of sites were discovered.
 pub fn verify(mut ati_stdout: &str, expected_partition: &HashMap<String, HashMap<String, usize>>) {
-    // checks mappings at each site are identical to expected partition
-    let mut found_sites = HashSet::new();
+    let mut found_sites: HashSet<String> = HashSet::new();
     while let Some(end) = ati_stdout.find(SITE_DELIM) {
         let site_info: Vec<_> = ati_stdout[..end].split("\n").collect();
         let mut site_iter = site_info.into_iter().filter(|s| !s.is_empty());
-        let site_name = site_iter.next().expect("Found site with no name");
-        // dbg!(&site_name);
+        let site_name = site_iter
+            .next()
+            .expect("Found site with no name")
+            .to_string();
 
-        assert!(!found_sites.contains(site_name));
-        found_sites.insert(site_name);
+        assert!(
+            !found_sites.contains(&site_name),
+            "Site {site_name} appears multiple times in ATI output"
+        );
 
         // map of var -> id assigned to abstract_type, at this site.
-        let mut site_ati_output = HashMap::new();
+        let mut site_ati_output: HashMap<String, usize> = HashMap::new();
         for var_info in site_iter {
-            if var_info.len() < 3 {
-                eprintln!("Found var:type mapping which is malformed: {}", var_info);
-                continue;
-            }
-
             let var_split: Vec<_> = var_info.split(" -> ").collect();
-            site_ati_output.insert(
-                String::from(var_split[0]),
-                str::parse::<usize>(var_split[1]).unwrap(),
+            assert_eq!(
+                var_split.len(),
+                2,
+                "Malformed var->id line at site {site_name}: {:?}",
+                var_info
             );
+
+            let var = var_split[0].to_string();
+            let id = str::parse::<usize>(var_split[1]).unwrap_or_else(|_| {
+                panic!(
+                    "Could not parse var->id line at site {site_name}: {:?}",
+                    var_info
+                )
+            });
+
+            assert!(
+                !site_ati_output.contains_key(&var),
+                "Var {var} appears multiple times at site {site_name}"
+            );
+            site_ati_output.insert(var, id);
         }
 
-        // site with name has to exist
-        let expected_site = expected_partition.get(site_name);
-        assert!(
-            expected_site.is_some(),
-            "Did not expect {site_name} to exist."
-        );
+        let expected_site = expected_partition.get(&site_name).unwrap_or_else(|| {
+            panic!("Did not expect site {site_name} to exist.");
+        });
 
-        let expected_site = expected_site.unwrap();
-        assert_eq!(
-            expected_site.len(),
-            site_ati_output.len(),
-            "Expected site {site_name} has a different number of \
-            registered parameter mappings ({}) than observed ({})", 
-            expected_site.len(), site_ati_output.len()
-        );
+        verify_site_partition(&site_name, expected_site, &site_ati_output);
 
-        let mut expected_to_actual: HashMap<&usize, &usize> = HashMap::new();
-        for (var, actual_id) in site_ati_output.iter() {
-            let expected_id = expected_site
-                .get(var)
-                .expect(&format!("Expected site {site_name} does not include observed var: {var}"));
-            if let Some(prev_actual_id) = expected_to_actual.get(expected_id) {
-                assert_eq!(
-                    **prev_actual_id, *actual_id,
-                    "Var {var} was found in a wrong set at site {site_name}"
-                );
-            } else {
-                expected_to_actual.insert(expected_id, actual_id);
-            }
-        }
-
+        found_sites.insert(site_name);
         ati_stdout = &ati_stdout[(end + SITE_DELIM.len())..];
     }
 
-    // found_sites contains no duplicates, so as long as we were able
-    assert!(found_sites.len() == expected_partition.len());
+    // Every expected site must have been observed in the ATI output.
+    let missing: Vec<&String> = expected_partition
+        .keys()
+        .filter(|k| !found_sites.contains(*k))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "Expected sites were never observed: {:?}",
+        missing
+    );
+}
+
+/// Asserts that the partition over variables at a site, induced by the
+/// observed ATI ids, is equivalent to the expected partition.
+///
+/// Two partitions are equivalent iff there is a bijection between their
+/// equivalence classes that respects the variable-to-class assignment.
+/// Equivalently, the map `expected_id -> actual_id` is a function (no
+/// expected class is split across two actual ids) AND the map
+/// `actual_id -> expected_id` is a function (no two expected classes
+/// got merged into one actual id).
+///
+/// The earlier implementation only enforced the first direction, so a
+/// regression that merges every variable into a single id (e.g.
+/// `{a: 0, b: 1, c: 0}` observed as `{a: 5, b: 5, c: 5}`) would pass
+/// silently. Both directions are now checked.
+fn verify_site_partition(
+    site_name: &str,
+    expected_site: &HashMap<String, usize>,
+    actual_site: &HashMap<String, usize>,
+) {
+    // Set-equality on var names.
+    let expected_vars: HashSet<&String> = expected_site.keys().collect();
+    let actual_vars: HashSet<&String> = actual_site.keys().collect();
+
+    let missing: Vec<&&String> = expected_vars.difference(&actual_vars).collect();
+    let extra: Vec<&&String> = actual_vars.difference(&expected_vars).collect();
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "Variable mismatch at site {site_name}: missing from output {:?}, unexpected in output {:?}",
+        missing,
+        extra
+    );
+
+    let mut expected_to_actual: HashMap<usize, usize> = HashMap::new();
+    let mut actual_to_expected: HashMap<usize, usize> = HashMap::new();
+    for (var, &actual_id) in actual_site.iter() {
+        let &expected_id = expected_site.get(var).unwrap();
+
+        if let Some(&prev_actual) = expected_to_actual.get(&expected_id) {
+            assert_eq!(
+                prev_actual, actual_id,
+                "Var {var} at site {site_name} was expected to share a class with another \
+                 var (expected_id={expected_id}, prev actual_id={prev_actual}), \
+                 but got actual_id={actual_id}."
+            );
+        } else {
+            expected_to_actual.insert(expected_id, actual_id);
+        }
+
+        if let Some(&prev_expected) = actual_to_expected.get(&actual_id) {
+            assert_eq!(
+                prev_expected, expected_id,
+                "Var {var} at site {site_name} ended up in actual class {actual_id} which \
+                 already held vars from expected class {prev_expected}, but {var} was \
+                 expected to be in class {expected_id}."
+            );
+        } else {
+            actual_to_expected.insert(actual_id, expected_id);
+        }
+    }
 }
 
 pub fn delete(exec: &Path) {

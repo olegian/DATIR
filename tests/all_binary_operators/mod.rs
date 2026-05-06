@@ -19,14 +19,15 @@ fn binary_operators() {
     register_arith_sites_for("mul", &mut expected);
     register_arith_sites_for("div", &mut expected);
     register_arith_sites_for("rem", &mut expected);
-    register_arith_sites_for("and", &mut expected);
-    register_arith_sites_for("or", &mut expected);
 
-    register_bitwise_sites_for("bit_xor", &mut expected);
-    register_bitwise_sites_for("bit_and", &mut expected);
-    register_bitwise_sites_for("bit_or", &mut expected);
-    register_bitwise_sites_for("shl", &mut expected);
-    register_bitwise_sites_for("shr", &mut expected);
+    register_logical_sites_for("and", &mut expected);
+    register_logical_sites_for("or", &mut expected);
+
+    register_arith_sites_for("bit_xor", &mut expected);
+    register_arith_sites_for("bit_and", &mut expected);
+    register_arith_sites_for("bit_or", &mut expected);
+    register_shift_sites_for("shl", &mut expected);
+    register_shift_sites_for("shr", &mut expected);
 
     register_comp_sites_for("eq", &mut expected);
     register_comp_sites_for("lt", &mut expected);
@@ -63,7 +64,28 @@ fn register_arith_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
     );
 }
 
-fn register_bitwise_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
+fn register_shift_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root(&format!(
+            "all_binary_operators/main.rs::{op_name}:::ENTER"
+        )))
+        .register("x", 0)
+        .register("y", 1)
+        .register("z", 2),
+    );
+
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root(&format!(
+            "all_binary_operators/main.rs::{op_name}:::EXIT"
+        )))
+        .register("x", 0)
+        .register("y", 1)
+        .register("z", 2)
+        .register("return", 0),
+    );
+}
+
+fn register_logical_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(&format!(
             "all_binary_operators/main.rs::{op_name}:::ENTER"

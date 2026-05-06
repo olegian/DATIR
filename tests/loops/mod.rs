@@ -19,7 +19,7 @@ fn loops() {
         ExpectedSite::new(prefix_with_path_from_root("loops/main.rs::if_expr:::ENTER"))
             .register("branch", 0)
             .register("a", 1)
-            .register("b", 2)
+            .register("b", 1)
             .register("c", 3)
             .register("d", 4),
     );

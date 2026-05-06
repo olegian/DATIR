@@ -164,8 +164,14 @@ impl TransformingFileLoader {
 
     fn transform_source(&self, file: FileContents, path: &Path) -> String {
         let psess = Self::create_parse_sess();
-
         let mut krate = common::parse_crate(&psess, file.source, Some(path));
+        if self.config.print_original_ast {
+            self.config.log(
+                "OriginalAst",
+                format!("======== {path:?} ========\n{krate:#?}\n"),
+            );
+        }
+
 
         for pass in self.passes.iter() {
             pass(&psess, &mut krate, &file.module_path);
@@ -173,7 +179,11 @@ impl TransformingFileLoader {
 
         let output = self.ast_to_source(&krate);
 
-        if self.config.print_transformed_source {
+        if self.config.print_transformed_ast {
+            self.config.log(
+                "TransformedAst",
+                format!("======== {path:?} ========\n{krate:#?}\n"),
+            );
             self.config.log(
                 "TransformedSource",
                 format!("======== {path:?} ========\n{output}\n"),

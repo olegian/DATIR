@@ -20,7 +20,7 @@ fn uses_enum() {
             "uses_enum/main.rs::use_color:::ENTER",
         ))
         .register("c::Blue.0", 0)
-        .register("scale", 1),
+        .register("scale", 0),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
@@ -40,7 +40,7 @@ fn uses_enum() {
         .register("p::D1.y", 1)
         .register("p::D2.a", 2)
         .register("p::D2.y", 3)
-        .register("z", 4),
+        .register("z", 1),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(

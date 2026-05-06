@@ -10,7 +10,9 @@ pub struct DatirConfig {
     /// Directory where all log files are written. If None, all debug output is writen to stdout.
     pub log_dir: Option<Box<Path>>,
     /// Whether or not to print out the modified source code after the second compiler invocation.
-    pub print_transformed_source: bool,
+    pub print_transformed_ast: bool,
+    /// Whether or not to print out the modified source code after the second compiler invocation.
+    pub print_original_ast: bool,
     /// Whether or not to print the information gathered from the first pass
     pub print_first_pass_info: bool,
     /// Whether or not to print the information regarding function signatures used to create
@@ -37,7 +39,8 @@ impl DatirConfig {
 
         Self {
             log_dir: Some(log_dir),
-            print_transformed_source: true,
+            print_transformed_ast: true,
+            print_original_ast: true,
             print_first_pass_info: true,
             print_function_signatures: true,
             print_config: true,
@@ -49,7 +52,8 @@ impl DatirConfig {
     pub fn test(decls_file: decls_gen::DeclsFile) -> Self {
         Self {
             log_dir: None,
-            print_transformed_source: false,
+            print_transformed_ast: false,
+            print_original_ast: false,
             print_first_pass_info: false,
             print_function_signatures: false,
             print_config: false,
@@ -62,7 +66,8 @@ impl DatirConfig {
     pub fn release(decls_file: decls_gen::DeclsFile, ati_output_dir: std::path::PathBuf) -> Self {
         Self {
             log_dir: None,
-            print_transformed_source: false,
+            print_transformed_ast: false,
+            print_original_ast: false,
             print_first_pass_info: false,
             print_function_signatures: false,
             print_config: false,

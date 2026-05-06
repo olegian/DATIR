@@ -45,9 +45,9 @@ fn unary_operators() {
             "unary_operators/main.rs::boolean_not:::EXIT",
         ))
         .register("x", 0)
-        .register("y", 0)
-        .register("z", 0)
-        .register("return", 0),
+        .register("y", 1)
+        .register("z", 2)
+        .register("return", 3),
     );
 
     expected.register_site(
@@ -62,7 +62,7 @@ fn unary_operators() {
         ExpectedSite::new(prefix_with_path_from_root(
             "unary_operators/main.rs::dereference:::EXIT",
         ))
-        .register("x", 0)
+        .register("x", 1) // this is because we reassigned to x
         .register("y", 1)
         .register("z", 1),
     );

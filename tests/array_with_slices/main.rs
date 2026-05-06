@@ -1,13 +1,3 @@
-/// FIXME: FINISH THIS TEST
-/// how should slices work??
-/// consider:
-/// [
-///   &a,  --> [1, 1, 1]
-///   &b,  --> [2, 2, 2, 2]    <- would a value interacting with this b's length mean that
-///   &c,  --> [3, 3, 3, 3, 3]      it is also comparable with other slice lengths?
-/// ]              ^
-///          would a value interacting with this element in slice c
-///        be comparable with all other elements in all other slices?
 fn main() {
     let a = [1; 3];
     let b = [2; 4];

@@ -55,13 +55,13 @@ fn assign_tuples() {
         ExpectedSite::new(prefix_with_path_from_root(
             "assign_tuples/main.rs::mutate_tuple:::EXIT",
         ))
-        .register("target.0", 0)
-        .register("target.1", 1)
-        .register("target.2", 2)
+        .register("target.0", 3)
+        .register("target.1", 4)
+        .register("target.2", 5)
         .register("value.0", 3)
-        .register("value.1", 1)
+        .register("value.1", 4)
         .register("value.2", 5)
-        .register("a", 1),
+        .register("a", 4),
     );
 
     let executable = Path::new(file!())

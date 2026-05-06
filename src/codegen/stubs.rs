@@ -7,15 +7,16 @@
  * functions and methods, and then finding a suffix to append to the inner name
  * that makes it unique.
 */
-use decls_gen::decls::RETURN_VAR_NAME;
 use decls_gen::ProgramPoint;
+use decls_gen::decls::RETURN_VAR_NAME;
 use rustc_ast::mut_visit::{self, MutVisitor};
 use rustc_ast::{self as ast};
 use rustc_ast_pretty::pprust;
 use rustc_span::symbol::kw;
 
 use crate::common::{self, DatirConfig, parsing};
-use crate::types::ati_info::{FirstPassInfo, TypeKey};
+use crate::gather::first_pass::FirstPassInfo;
+use crate::gather::type_key::TypeKey;
 
 // FIXME: time for another rewrite.. this is unruly
 // probably split into a file for fns, a file for methods,
@@ -114,9 +115,7 @@ fn generate_stubs_in_mod(
 
                 // rip the original body out of the free function.
                 let orig_body = body.take().unwrap_or_else(|| {
-                    panic!(
-                        "free fn `{orig_name}` in module `{mod_path}` has no body."
-                    )
+                    panic!("free fn `{orig_name}` in module `{mod_path}` has no body.")
                 });
 
                 // construct fn item that will at some point contain the original body
@@ -199,7 +198,7 @@ fn generate_stubs_in_mod(
                 // split apart the impl block components
                 let type_name = pprust::ty_to_string(self_ty);
                 let type_key =
-                    ast_impl_type_key(of_trait.as_deref().map(|h| &h.trait_ref), self_ty)
+                    TypeKey::try_from_ast(of_trait.as_deref().map(|h| &h.trait_ref), self_ty)
                         .unwrap_or_else(|| {
                             panic!(
                                 "stub generation could not derive TypeKey from impl self-type \
@@ -299,11 +298,11 @@ fn generate_stubs_in_mod(
                     let enter_ppt = datir_config
                         .decls_file
                         .enter_ppt(&entry.base_ppt_name)
-                        .expect("ENTER ppt missing — should have been validated in pass 1");
+                        .expect("ENTER ppt missing, should have been validated in pass 1");
                     let exit_ppt = datir_config
                         .decls_file
                         .exit_ppt(&entry.base_ppt_name)
-                        .expect("EXIT ppt missing — should have been validated in pass 1");
+                        .expect("EXIT ppt missing, should have been validated in pass 1");
 
                     // replace the existing method body with the stub code,
                     // the code that creates ENTER/EXIT points, and calls
@@ -405,80 +404,6 @@ fn generate_stubs_in_mod(
             items.insert(0, import);
         }
     }
-}
-
-/// Creates a TypeKey for an impl block, derived from its `self_ty` and `of_trait`.
-///
-/// Returns `None` when either path can't be canonicalized.
-/// Mirrors gather_orig.rs::impl_type_key so both pass-1 and pass-2 produce identical keys.
-pub fn ast_impl_type_key(of_trait: Option<&ast::TraitRef>, self_ty: &ast::Ty) -> Option<TypeKey> {
-    let self_path = ast_ty_canonical(self_ty)?;
-    let trait_path = match of_trait {
-        Some(tr) => Some(ast_path_canonical(&tr.path)?),
-        None => None,
-    };
-    Some(match trait_path {
-        Some(t) => TypeKey::trait_impl(self_path, t),
-        None => TypeKey::inherent(self_path),
-    })
-}
-
-/// Canonical ::-joined string form of an AST path.
-/// Mirrors `gather_orig.rs::hir_path_canonical`.
-fn ast_path_canonical(path: &ast::Path) -> Option<String> {
-    let mut parts = Vec::with_capacity(path.segments.len());
-    for seg in path.segments.iter() {
-        parts.push(ast_segment_canonical(seg)?);
-    }
-    Some(parts.join("::"))
-}
-
-// Canonicalizes a single segment of a path.
-fn ast_segment_canonical(seg: &ast::PathSegment) -> Option<String> {
-    let ident = seg.ident.name.to_string();
-    let Some(args) = &seg.args else {
-        return Some(ident);
-    };
-    let ast::GenericArgs::AngleBracketed(args) = args.as_ref() else {
-        return None;
-    };
-
-    let mut rendered = Vec::new();
-    for arg in args.args.iter() {
-        let ast::AngleBracketedArg::Arg(generic_arg) = arg else {
-            return None;
-        };
-        let s = match generic_arg {
-            ast::GenericArg::Lifetime(lt) => lt.ident.name.to_string(),
-            ast::GenericArg::Type(ty) => ast_ty_canonical(ty)?,
-            ast::GenericArg::Const(_) => panic!(
-                "DATIR does not support const generic arguments in impl-block paths \
-                 (encountered in segment `{}`); see ast_segment_canonical",
-                seg.ident.name
-            ),
-        };
-        rendered.push(s);
-    }
-
-    if rendered.is_empty() {
-        Some(ident)
-    } else {
-        Some(format!("{ident}<{}>", rendered.join(",")))
-    }
-}
-
-// Canonicalizes a Path type name
-fn ast_ty_canonical(ty: &ast::Ty) -> Option<String> {
-    if matches!(ty.kind, ast::TyKind::Infer) {
-        panic!(
-            "DATIR does not support inferred (`_`) generic arguments in impl-block \
-             paths; see ast_ty_canonical"
-        );
-    }
-    let ast::TyKind::Path(_, path) = &ty.kind else {
-        return None;
-    };
-    ast_path_canonical(path)
 }
 
 /// Converts the generic params to a string like `<'a, T, U: Clone>`.
@@ -622,7 +547,7 @@ fn get_param_name(param: &ast::Param) -> String {
 
 /// True if `ty`'s outer wrapper is `TaggedRefMut<...>`. Used by the wrapper
 /// to decide whether the formal needs a `.reborrow()` when forwarded to the
-/// inner fn — `TaggedRefMut` is move-only, but the binding still has to live
+/// inner fn. `TaggedRefMut` is move-only, but the binding still has to live
 /// for the EXIT-site binds.
 fn is_tagged_ref_mut(ty: &ast::Ty) -> bool {
     let ast::TyKind::Path(_, path) = &ty.kind else {
@@ -690,8 +615,8 @@ fn is_dead(ppt: &ProgramPoint, formal: &str) -> bool {
     ppt.var_decl(formal.to_string())
         .unwrap_or_else(|| {
             panic!(
-                "stub generation: ppt is missing VariableDecl for formal `{formal}` \
-                 — pass 1 should have rejected this; DATIR/decls-gen drift?"
+                "stub generation: ppt is missing VariableDecl for formal `{formal}`, \
+                 pass 1 should have rejected this; DATIR/decls-gen drift?"
             )
         })
         .is_uninit()

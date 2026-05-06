@@ -249,8 +249,8 @@ fn iter_array() {
         .register("arr[0]", 1)
         .register("arr[1]", 1)
         .register("arr[2]", 1)
-        .register("arr[3]", 1)
-        .register("arr[4]", 1)
+        .register("arr[3]", 4)
+        .register("arr[4]", 5)
         .register("val", 1)
         .register("return", 0)
     );

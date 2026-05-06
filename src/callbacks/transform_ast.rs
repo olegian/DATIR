@@ -14,10 +14,7 @@ use rustc_middle::ty::TyCtxt;
 use rustc_session::parse::ParseSess;
 
 use crate::{
-    common::DatirConfig,
-    file_loaders::transforming_loader::{Passes, TransformingFileLoader},
-    types::ati_info::FirstPassInfo,
-    visitors::{TransformVisitor, add_crate_attribute, define_types_from_file, generate_stubs},
+    codegen::{define_types, stubs}, common::DatirConfig, file_loaders::transforming_loader::{Passes, TransformingFileLoader}, gather::first_pass::FirstPassInfo, instrument::instrument::InstrumentingVisitor
 };
 
 /// Callbacks used to transform the ASTs of all files being instrumented.
@@ -51,11 +48,11 @@ impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
                 // (literals, binary ops, calls, etc.) and type wrapping (Tagged<T>)
                 // in one AST walk.
                 let mut visitor =
-                    TransformVisitor::new(&datir_config, &first_pass, psess, module_path);
+                    InstrumentingVisitor::new(psess, &datir_config, &first_pass, module_path);
                 visitor.visit_crate(&mut krate);
 
                 // create all required function stubs, which perform site management
-                generate_stubs(&datir_config, &first_pass, krate, module_path, psess);
+                stubs::generate_stubs(&datir_config, &first_pass, krate, module_path, psess);
             },
         ));
 
@@ -75,31 +72,36 @@ impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         krate: &mut ast::Crate,
     ) -> Compilation {
         let cwd = std::env::current_dir().unwrap();
-        define_types_from_file(
+        define_types::define_types_from_file(
             &cwd.join("src/ati/tagged_ops.rs"),
             &compiler.sess.psess,
             krate,
         );
-        define_types_from_file(
+        define_types::define_types_from_file(
             &cwd.join("src/ati/site_binds.rs"),
             &compiler.sess.psess,
             krate,
         );
-        define_types_from_file(&cwd.join("src/ati/index.rs"), &compiler.sess.psess, krate);
-        define_types_from_file(&cwd.join("src/ati/iterators.rs"), &compiler.sess.psess, krate);
-        define_types_from_file(&cwd.join("src/ati/tagged.rs"), &compiler.sess.psess, krate);
-        define_types_from_file(&cwd.join("src/ati/ati.rs"), &compiler.sess.psess, krate);
-        add_crate_attribute(
+        define_types::define_types_from_file(&cwd.join("src/ati/index.rs"), &compiler.sess.psess, krate);
+        define_types::define_types_from_file(
+            &cwd.join("src/ati/iterators.rs"),
+            &compiler.sess.psess,
+            krate,
+        );
+        define_types::define_types_from_file(&cwd.join("src/ati/tagged.rs"), &compiler.sess.psess, krate);
+        define_types::define_types_from_file(&cwd.join("src/ati/ati.rs"), &compiler.sess.psess, krate);
+        define_types::add_crate_attribute(
             "#![feature(min_specialization)]",
             &compiler.sess.psess,
             krate,
         );
-        add_crate_attribute("#![feature(step_trait)]", &compiler.sess.psess, krate);
-        add_crate_attribute("#![feature(unsize)]", &compiler.sess.psess, krate);
-        add_crate_attribute("#![feature(coerce_unsized)]", &compiler.sess.psess, krate);
+        define_types::add_crate_attribute("#![feature(step_trait)]", &compiler.sess.psess, krate);
+        define_types::add_crate_attribute("#![feature(unsize)]", &compiler.sess.psess, krate);
+        define_types::add_crate_attribute("#![feature(coerce_unsized)]", &compiler.sess.psess, krate);
+
         // For the --release main wrapper: produces a random filename for
         // the per-execution .ati output via std::random.
-        add_crate_attribute("#![feature(random)]", &compiler.sess.psess, krate);
+        define_types::add_crate_attribute("#![feature(random)]", &compiler.sess.psess, krate);
 
         Compilation::Continue
     }

@@ -18,58 +18,17 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hir::def_id::DefId;
 use rustc_middle as mir;
+use rustc_span::source_map::SourceMap;
 use rustc_span::{Ident, Span};
 
-use crate::common::CanBeTupled;
+use crate::{
+    common::CanBeTupled,
+    gather::{span_key::SpanKey, type_key::TypeKey},
+};
 
 /// ::-joined module path matching `tcx.def_path_str` format.
 /// `""` denotes the crate root.
 pub type ModPath = String;
-
-/// Namespace key for an impl-method's enclosing impl block. Distinguishes
-/// inherent impls from trait impls so that impl Foo { fn bar() } and
-/// impl SomeTrait for Foo { fn bar() } don't collide in the
-/// (mod_path, type_key, method_ident) slot in FirstPassInfo.
-///
-/// Both paths are stored as fully qualified paths.
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct TypeKey {
-    /// ::-joined path of the impl's self type,
-    /// Generic args are dropped (impl Foo<u32> and impl<T> Foo<T>
-    /// both produce "Foo").
-    pub self_path: String,
-    /// Some(path) for `impl Trait for T`, None for inherent impls. Same
-    /// ::-joined ident-only format as self_path.
-    pub trait_path: Option<String>,
-}
-
-impl TypeKey {
-    /// Constructor for non-trait based impls
-    pub fn inherent(self_path: impl Into<String>) -> Self {
-        Self {
-            self_path: self_path.into(),
-            trait_path: None,
-        }
-    }
-
-    /// Constructor for trait based impls
-    pub fn trait_impl(self_path: impl Into<String>, trait_path: impl Into<String>) -> Self {
-        Self {
-            self_path: self_path.into(),
-            trait_path: Some(trait_path.into()),
-        }
-    }
-}
-
-impl std::fmt::Display for TypeKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.trait_path {
-            Some(t) => write!(f, "{} as {}", self.self_path, t),
-            None => f.write_str(&self.self_path),
-        }
-    }
-}
-
 /// Contains per-fn information learned in pass 1
 #[derive(Debug, Clone)]
 pub struct FnEntry {
@@ -97,6 +56,20 @@ pub struct ModEntry {
 /// Contains all information that is going to be passed between the
 /// first and second compilation rounds. Populated by invoking the
 /// compiler, using the GatherAtiInfo callbacks.
+///
+/// All span-keyed sets store their entries as `SpanKey`, and every
+/// `observe_*` / `is_*` method routes the input `Span` through
+/// `SpanKey::from_span`. That helper:
+///   * collapses macro-expansion / desugaring spans via
+///     `source_callsite()` so a query on the syntactic AST node hits the
+///     entry recorded against the underlying user-source span;
+///   * rejects dummy / unmapped spans;
+///   * normalizes to `(file, lo_byte_offset, hi_byte_offset)` so the
+///     keys are immune to span-interning quirks across separate
+///     compiler invocations.
+/// Pass-1 sites (HIR analyzers) and pass-2 sites (AST visitor) MUST go
+/// through these helpers; never insert into / look up the inner sets
+/// directly with a raw Span.
 #[derive(Debug, Default)]
 pub struct FirstPassInfo {
     /// Per-module index of every fn/method that pass 1 wants pass 2 to
@@ -110,26 +83,36 @@ pub struct FirstPassInfo {
     tracked_fn_def_ids: HashSet<DefId>,
 
     /// places where a track_slice needs to be inserted, as a coercion from an array to a slice type occurred
-    index_by_range_locs: HashSet<Span>,
+    index_by_range_locs: HashSet<SpanKey>,
 
     /// places where a non-tracked function is called
     /// mapped to whether the return type at that call site is tupleable (i.e. a tracked primitive).
     // FIXME: these function calls could return complex types, like structs, which can be tupled but that requires
     // defining a new struct with Tagged variants of all fields, and that's hard to do :(, ignoring for now.
     // hopefully it won't be a problem...
-    untracked_fn_calls: HashMap<Span, bool>,
+    untracked_fn_calls: HashMap<SpanKey, bool>,
 
     /// Spans of Ref expressions, which refer to a type T which is tupleable.
-    ref_to_tupleable_ty: HashSet<Span>,
+    ref_to_tupleable_ty: HashSet<SpanKey>,
 
     /// Spans of unary `*` expressions whose operand's type is `&T` / `&mut T`
     /// with `T` tupleable. Post-instrumentation these operate on a
     /// `TaggedRef` / `TaggedRefMut`, and a raw `*` would strip the tag.
-    tag_stripping_deref_locs: HashSet<Span>,
+    tag_stripping_deref_locs: HashSet<SpanKey>,
 
     /// Spans of `Assign` / `AssignOp` whose LHS is `*expr` with `expr` typed
-    /// `&mut T` and `T` tupleable. 
-    assign_through_tagged_ref_mut_locs: HashSet<Span>,
+    /// `&mut T` and `T` tupleable.
+    assign_through_tagged_ref_mut_locs: HashSet<SpanKey>,
+
+    /// Spans of expressions whose post-instrumentation type is
+    /// `TaggedRefMut<T>` — i.e. their typeck-resolved (post-adjustment) type
+    /// is `&mut T` with `T` tupleable. `TaggedRefMut` is move-only, so any
+    /// pass-2 rewrite that *consumes* such an expression (binding it into
+    /// `let __ati_lhs = ...`, moving it into emitted args) must reborrow
+    /// instead, otherwise the original binding is invalidated for any use
+    /// later in the function. The reborrow is always semantically safe in
+    /// operand position.
+    ref_mut_to_tupleable_locs: HashSet<SpanKey>,
 }
 
 impl FirstPassInfo {
@@ -158,11 +141,7 @@ impl FirstPassInfo {
                 mod_entry.free_fns.insert(key, entry);
             }
             Some(tk) => {
-                mod_entry
-                    .methods
-                    .entry(tk)
-                    .or_default()
-                    .insert(key, entry);
+                mod_entry.methods.entry(tk).or_default().insert(key, entry);
             }
         }
 
@@ -171,36 +150,69 @@ impl FirstPassInfo {
 
     /// register that a function call was made to an untracked function at
     /// `loc`, which returned a value of type `ty`
-    pub fn observe_untracked_fn_call<'a>(&mut self, loc: Span, ty: mir::ty::Ty<'a>) {
-        self.untracked_fn_calls.insert(loc, ty.can_be_tupled());
+    pub fn observe_untracked_fn_call<'a>(
+        &mut self,
+        loc: Span,
+        sm: &SourceMap,
+        ty: mir::ty::Ty<'a>,
+    ) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.untracked_fn_calls.insert(key, ty.can_be_tupled());
+        }
     }
 
-    pub fn observe_index_by_range(&mut self, loc: Span) {
-        self.index_by_range_locs.insert(loc);
+    pub fn observe_index_by_range(&mut self, loc: Span, sm: &SourceMap) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.index_by_range_locs.insert(key);
+        }
     }
 
-    pub fn observe_ref_to_tupleable_ty(&mut self, loc: Span) {
-        self.ref_to_tupleable_ty.insert(loc);
+    pub fn observe_ref_to_tupleable_ty(&mut self, loc: Span, sm: &SourceMap) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.ref_to_tupleable_ty.insert(key);
+        }
     }
 
-    pub fn is_span_ref_to_tupleable_ty(&self, loc: &Span) -> bool {
-        self.ref_to_tupleable_ty.contains(loc)
+    pub fn is_span_ref_to_tupleable_ty(&self, loc: Span, sm: &SourceMap) -> bool {
+        SpanKey::from_span(loc, sm)
+            .as_ref()
+            .map_or(false, |k| self.ref_to_tupleable_ty.contains(k))
     }
 
-    pub fn observe_tag_stripping_deref(&mut self, loc: Span) {
-        self.tag_stripping_deref_locs.insert(loc);
+    pub fn observe_tag_stripping_deref(&mut self, loc: Span, sm: &SourceMap) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.tag_stripping_deref_locs.insert(key);
+        }
     }
 
-    pub fn observe_assign_through_tagged_ref_mut(&mut self, loc: Span) {
-        self.assign_through_tagged_ref_mut_locs.insert(loc);
+    pub fn observe_assign_through_tagged_ref_mut(&mut self, loc: Span, sm: &SourceMap) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.assign_through_tagged_ref_mut_locs.insert(key);
+        }
     }
 
-    pub fn is_tag_stripping_deref(&self, loc: &Span) -> bool {
-        self.tag_stripping_deref_locs.contains(loc)
+    pub fn is_tag_stripping_deref(&self, loc: Span, sm: &SourceMap) -> bool {
+        SpanKey::from_span(loc, sm)
+            .as_ref()
+            .map_or(false, |k| self.tag_stripping_deref_locs.contains(k))
     }
 
-    pub fn is_assign_through_tagged_ref_mut(&self, loc: &Span) -> bool {
-        self.assign_through_tagged_ref_mut_locs.contains(loc)
+    pub fn is_assign_through_tagged_ref_mut(&self, loc: Span, sm: &SourceMap) -> bool {
+        SpanKey::from_span(loc, sm).as_ref().map_or(false, |k| {
+            self.assign_through_tagged_ref_mut_locs.contains(k)
+        })
+    }
+
+    pub fn observe_ref_mut_to_tupleable(&mut self, loc: Span, sm: &SourceMap) {
+        if let Some(key) = SpanKey::from_span(loc, sm) {
+            self.ref_mut_to_tupleable_locs.insert(key);
+        }
+    }
+
+    pub fn is_ref_mut_to_tupleable(&self, loc: Span, sm: &SourceMap) -> bool {
+        SpanKey::from_span(loc, sm)
+            .as_ref()
+            .map_or(false, |k| self.ref_mut_to_tupleable_locs.contains(k))
     }
 
     /// returns true if this def_id represents a tracked function
@@ -210,12 +222,15 @@ impl FirstPassInfo {
 
     /// returns whether the return type of an untracked function call at this
     /// location is tupleable, if such a call exists
-    pub fn is_untracked_call_ret_tupleable(&self, location: &Span) -> Option<bool> {
-        self.untracked_fn_calls.get(location).copied()
+    pub fn is_untracked_call_ret_tupleable(&self, location: Span, sm: &SourceMap) -> Option<bool> {
+        let key = SpanKey::from_span(location, sm)?;
+        self.untracked_fn_calls.get(&key).copied()
     }
 
-    pub fn is_span_index_by_range(&self, location: &Span) -> bool {
-        self.index_by_range_locs.contains(location)
+    pub fn is_span_index_by_range(&self, location: Span, sm: &SourceMap) -> bool {
+        SpanKey::from_span(location, sm)
+            .as_ref()
+            .map_or(false, |k| self.index_by_range_locs.contains(k))
     }
 
     /// Look up the recorded `FnEntry` for a free fn in module `mod_path` with

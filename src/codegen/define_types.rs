@@ -35,15 +35,3 @@ pub fn add_crate_attribute(attr: &str, psess: &ParseSess, krate: &mut ast::Crate
     let attr = common::parse_single_unstable_compiler_attribute(psess, attr.into(), None);
     krate.attrs.push(attr);
 }
-
-/// Gives access to ATI types to all files being compiled
-pub fn import_root_crate(krate: &mut ast::Crate, psess: &ParseSess) {
-    let code = r#"
-        use crate::*;
-    "#;
-
-    let items = common::parse_items(psess, code.into(), None);
-    for item in items {
-        krate.items.insert(0, item);
-    }
-}

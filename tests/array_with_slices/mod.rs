@@ -44,8 +44,8 @@ fn array_with_slices() {
             "array_with_slices/main.rs::foo:::EXIT",
         ))
         .register("arr[0][0]", 8)
-        .register("arr[0][1]", 0)
-        .register("arr[0][2]", 0)
+        .register("arr[0][1]", 8)
+        .register("arr[0][2]", 8)
         .register("arr[0].length", 1)
         .register("arr[1][0]", 2)
         .register("arr[1][1]", 2)
@@ -132,10 +132,10 @@ fn array_with_slices() {
         ExpectedSite::new(prefix_with_path_from_root(
             "array_with_slices/main.rs::bar:::EXIT",
         ))
-        .register("slice[0][0][0]", 0)
-        .register("slice[0][0][1]", 0)
-        .register("slice[0][0][2]", 0)
-        .register("slice[0][0].length", 1)
+        .register("slice[0][0][0]", 8)
+        .register("slice[0][0][1]", 8)
+        .register("slice[0][0][2]", 8)
+        .register("slice[0][0].length", 7)
         .register("slice[0][1][0]", 2)
         .register("slice[0][1][1]", 2)
         .register("slice[0][1][2]", 2)
@@ -147,12 +147,12 @@ fn array_with_slices() {
         .register("slice[0][2][3]", 4)
         .register("slice[0][2][4]", 4)
         .register("slice[0][2].length", 5)
-        .register("slice[0].length", 1) // note same set as above because of previous interactions
+        .register("slice[0].length", 7) // note same set as above because of previous interactions
 
-        .register("slice[1][0][0]", 0)
-        .register("slice[1][0][1]", 0)
-        .register("slice[1][0][2]", 0)
-        .register("slice[1][0].length", 1)
+        .register("slice[1][0][0]", 8)
+        .register("slice[1][0][1]", 8)
+        .register("slice[1][0][2]", 8)
+        .register("slice[1][0].length", 7)
         .register("slice[1][1][0]", 2)
         .register("slice[1][1][1]", 2)
         .register("slice[1][1][2]", 2)
@@ -164,12 +164,12 @@ fn array_with_slices() {
         .register("slice[1][2][3]", 4)
         .register("slice[1][2][4]", 4)
         .register("slice[1][2].length", 5)
-        .register("slice[1].length", 1)
+        .register("slice[1].length", 7)
 
-        .register("slice[2][0][0]", 0)
-        .register("slice[2][0][1]", 0)
-        .register("slice[2][0][2]", 0)
-        .register("slice[2][0].length", 1)
+        .register("slice[2][0][0]", 8)
+        .register("slice[2][0][1]", 8)
+        .register("slice[2][0][2]", 8)
+        .register("slice[2][0].length", 7)
         .register("slice[2][1][0]", 2)
         .register("slice[2][1][1]", 2)
         .register("slice[2][1][2]", 2)
@@ -181,9 +181,9 @@ fn array_with_slices() {
         .register("slice[2][2][3]", 4)
         .register("slice[2][2][4]", 4)
         .register("slice[2][2].length", 5)
-        .register("slice[2].length", 1)
+        .register("slice[2].length", 7)
 
-        .register("slice.length", 6)
+        .register("slice.length", 7)
 
         .register("a", 7)
         .register("b", 8)

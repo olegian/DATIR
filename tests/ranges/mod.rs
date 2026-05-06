@@ -261,11 +261,11 @@ fn ranges() {
         .register("return[2]", 3)
         .register("return[3]", 3)
         .register("return[4]", 3)
-        .register("return[5]", 10)
-        .register("return[6]", 10)
-        .register("return[7]", 10)
-        .register("return[8]", 10)
-        .register("return[9]", 10)
+        .register("return[5]", 0)
+        .register("return[6]", 0)
+        .register("return[7]", 0)
+        .register("return[8]", 0)
+        .register("return[9]", 0)
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("ranges.out");

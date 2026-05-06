@@ -20,11 +20,12 @@ fn assign_operators() {
     register_arith_sites_for("divassign", &mut expected);
     register_arith_sites_for("remassign", &mut expected);
 
-    register_bitwise_sites_for("bitxorassign", &mut expected);
-    register_bitwise_sites_for("bitandassign", &mut expected);
-    register_bitwise_sites_for("bitorassign", &mut expected);
-    register_bitwise_sites_for("shlassign", &mut expected);
-    register_bitwise_sites_for("shrassign", &mut expected);
+    register_arith_sites_for("bitxorassign", &mut expected);
+    register_arith_sites_for("bitandassign", &mut expected);
+    register_arith_sites_for("bitorassign", &mut expected);
+
+    register_shift_sites_for("shlassign", &mut expected);
+    register_shift_sites_for("shrassign", &mut expected);
 
     let executable = Path::new(file!()).parent().unwrap().join("assign_ops.out");
     delete(&executable);
@@ -54,7 +55,9 @@ fn register_arith_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
     );
 }
 
-fn register_bitwise_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
+/// Shift compound-assigns only merge `self` with the result; the shift
+/// amount (right operand) is not unioned with the shifted value.
+fn register_shift_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(&format!(
             "all_assign_operators/main.rs::{op_name}:::ENTER"
@@ -71,6 +74,6 @@ fn register_bitwise_sites_for(op_name: &str, expected: &mut ExpectedOutput) {
         .register("x", 0)
         .register("y", 1)
         .register("z", 2)
-        .register("return", 3),
+        .register("return", 2),
     );
 }
