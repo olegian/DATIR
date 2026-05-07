@@ -1,8 +1,12 @@
-use crate::instrument::{
-    expr::common,
-    instrument::InstrumentingVisitor,
-    types,
-};
+//! Defines a function to transform a single function or method call AST expression.
+//! 
+//! If the first pass determined that this expression is an invocation of an untracked function,
+//! then all inputs need to be untupled, and the return value (might) need tupling.
+//! 
+//! The Path which identifies the function being invoked could also have generic types within
+//! it, which require tupleing as well.
+
+use crate::instrument::{expr::common, instrument::InstrumentingVisitor, types};
 
 /// Invoked whenever the visitor runs into a ExprKind::Call.
 ///
@@ -23,12 +27,14 @@ pub fn transform_call(visitor: &mut InstrumentingVisitor, call_expr: &mut rustc_
         tuple_generic_args_in_segment(segment);
     }
 
-    let Some(ret_tupleable) = visitor
+    let Some(call) = visitor
         .first_pass
-        .is_untracked_call_ret_tupleable(func.span, visitor.psess.source_map())
+        .untracked_fn_calls
+        .get(func.span, visitor.psess.source_map())
     else {
         return;
     };
+    let ret_tupleable = call.ret_is_tupleable;
 
     for arg_expr in args.iter_mut() {
         common::untuple(&mut **arg_expr);

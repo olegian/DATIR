@@ -1,6 +1,14 @@
+//! Defines functions to tuple Literal expressions, by using the runtime libraries 
+//! `ATI::track` function.
+//! 
+//! Only literals of types that are tuplable should be tupled. 
+
 use rustc_ast_pretty::pprust;
 
-use crate::{common::CanBeTupled, instrument::{expr::common, instrument::InstrumentingVisitor}};
+use crate::{
+    common::CanBeTupled,
+    instrument::{expr::common, instrument::InstrumentingVisitor},
+};
 
 /// Invoked whenever the visitor runs into a ExprKind::Lit
 ///

@@ -132,17 +132,6 @@ impl Site {
     }
 }
 
-// FIXME: this should really just be a stored value rather than something that is extracted
-fn ppt_type_from_name(name: &str) -> &'static str {
-    if name.ends_with(":::ENTER") {
-        "enter"
-    } else if name.ends_with(":::EXIT") {
-        "exit"
-    } else {
-        panic!("unsupported ppt-type in site name: {}", name)
-    }
-}
-
 /// Manages multiple Sites at once, to allow for analyzing multiple functions
 pub struct Sites {
     locs: std::collections::BTreeMap<String, Site>,

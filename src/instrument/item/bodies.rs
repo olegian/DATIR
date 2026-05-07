@@ -1,6 +1,23 @@
+//! This file defines the transformation performed on each Item that has a body: Functions,
+//! Methods, and Traits.
+//!
+//! Input and return types are recursively tupled, as defined by
+//! [types::recursively_transform_ast_type].
+//!
+//! Bodies are walked and transformed, via the transformation defined in [crate::instrument::expr].
+//!
+//! If the Instrument compilation encounters a function or method which the Gather pass determined
+//! should not be instrumented (via [crate::gather::first_pass_info]), then the function is skipped.
+//!
+//! Further, given that the Instrument compilation happens after the Gather compilation is able to
+//! run all code analysis, we know that the compiled crate is semantically correct. Therefore, it
+//! is safe to make every variable binding `mut`, which allows for assigning to values via
+//! TaggedRefMut's. This is currently a patch solution, it is simple, works, and maintains
+//! correctness.
+
 use rustc_ast_pretty::pprust;
 
-use crate::gather::type_key;
+use crate::gather::{first_pass_info::FnNamespace, type_key};
 use crate::instrument::{instrument::InstrumentingVisitor, types};
 
 /// Walks the body, then wraps parameter and return types in `Tagged<T>`
@@ -16,19 +33,23 @@ pub fn transform_fn(visitor: &mut InstrumentingVisitor, fn_item: &mut rustc_ast:
         return;
     };
 
+    // skip functions that are considered untracked.
     if visitor
         .first_pass
-        .lookup_free_fn(&visitor.mod_path, ident.as_str())
+        .fns
+        .lookup(&visitor.mod_path, FnNamespace::Free, ident.as_str())
         .is_none()
     {
         return;
     }
 
+    // instrument the function body
     if let Some(body) = body {
         rustc_ast::mut_visit::walk_block(visitor, body);
     }
 
     for param in &mut decl.inputs {
+        // make every parameter binding mutable...
         if matches!(
             param.ty.kind,
             rustc_ast::TyKind::Ref(
@@ -48,16 +69,20 @@ pub fn transform_fn(visitor: &mut InstrumentingVisitor, fn_item: &mut rustc_ast:
             mode.1 = rustc_ast::Mutability::Mut;
         }
 
+        // ... and recursively tuple the input types.
         types::recursively_transform_ast_type(&mut param.ty);
     }
 
     if let rustc_ast::FnRetTy::Ty(return_type) = &mut decl.output {
+        // recursively tuple the return type, if it exists.
         types::recursively_transform_ast_type(return_type);
     }
 }
 
 /// Walks the body of every method that pass 1 observed in this impl,
-/// then wraps parameter and return types.
+/// then wraps parameter and return types. This function is very similar to the above
+/// `transform_fn`, but requires a slightly different lookup as the method is defined
+/// within the self type's namespace.
 pub fn transform_impl(visitor: &mut InstrumentingVisitor, impl_item: &mut rustc_ast::Item) {
     let rustc_ast::ItemKind::Impl(rustc_ast::Impl {
         of_trait,
@@ -93,7 +118,12 @@ pub fn transform_impl(visitor: &mut InstrumentingVisitor, impl_item: &mut rustc_
 
         if visitor
             .first_pass
-            .lookup_method(&visitor.mod_path, &type_key, ident.as_str())
+            .fns
+            .lookup(
+                &visitor.mod_path,
+                FnNamespace::Method(&type_key),
+                ident.as_str(),
+            )
             .is_none()
         {
             continue;
@@ -115,6 +145,7 @@ pub fn transform_impl(visitor: &mut InstrumentingVisitor, impl_item: &mut rustc_
     }
 }
 
+/// Transforms a trait definition.
 pub fn transform_trait(_visitor: &mut InstrumentingVisitor, _trait_item: &mut rustc_ast::Item) {
     // TODO: trait items aren't instrumented yet.
 }

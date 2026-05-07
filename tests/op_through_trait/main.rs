@@ -99,8 +99,8 @@ fn main() {
     };
     baz(g, h, i);
 
-    let j = WithGeneric { a: 10, b: 20};
-    let k = WithGeneric { a: 10, b: 20};
+    let j = WithGeneric { a: 10, b: 20 };
+    let k = WithGeneric { a: 10, b: 20 };
     quux(j, k);
 }
 

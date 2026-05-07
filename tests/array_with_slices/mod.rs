@@ -62,7 +62,6 @@ fn array_with_slices() {
         .register("a", 3)
         .register("b", 8)
         .register("unused", 9)
-
         .register("return", 7),
     );
 
@@ -87,7 +86,6 @@ fn array_with_slices() {
         .register("slice[0][2][4]", 4)
         .register("slice[0][2].length", 5)
         .register("slice[0].length", 1) // note same set as above because of previous interactions
-
         .register("slice[1][0][0]", 0)
         .register("slice[1][0][1]", 0)
         .register("slice[1][0][2]", 0)
@@ -104,7 +102,6 @@ fn array_with_slices() {
         .register("slice[1][2][4]", 4)
         .register("slice[1][2].length", 5)
         .register("slice[1].length", 1)
-
         .register("slice[2][0][0]", 0)
         .register("slice[2][0][1]", 0)
         .register("slice[2][0][2]", 0)
@@ -121,9 +118,7 @@ fn array_with_slices() {
         .register("slice[2][2][4]", 4)
         .register("slice[2][2].length", 5)
         .register("slice[2].length", 1)
-
         .register("slice.length", 6)
-
         .register("a", 7)
         .register("b", 8)
         .register("unused", 9),
@@ -148,7 +143,6 @@ fn array_with_slices() {
         .register("slice[0][2][4]", 4)
         .register("slice[0][2].length", 5)
         .register("slice[0].length", 7) // note same set as above because of previous interactions
-
         .register("slice[1][0][0]", 8)
         .register("slice[1][0][1]", 8)
         .register("slice[1][0][2]", 8)
@@ -165,7 +159,6 @@ fn array_with_slices() {
         .register("slice[1][2][4]", 4)
         .register("slice[1][2].length", 5)
         .register("slice[1].length", 7)
-
         .register("slice[2][0][0]", 8)
         .register("slice[2][0][1]", 8)
         .register("slice[2][0][2]", 8)
@@ -182,13 +175,10 @@ fn array_with_slices() {
         .register("slice[2][2][4]", 4)
         .register("slice[2][2].length", 5)
         .register("slice[2].length", 7)
-
         .register("slice.length", 7)
-
         .register("a", 7)
         .register("b", 8)
         .register("unused", 9)
-
         .register("return", 10),
     );
 

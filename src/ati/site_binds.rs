@@ -19,7 +19,7 @@ pub trait SiteBind {
 /// If the type is not tagged, then there is nothing to bind to the site,
 /// resulting in a no-op.
 impl<T> SiteBind for T {
-    default fn bind(&self, site: &mut Site, var_name: &str) {}
+    default fn bind(&self, _site: &mut Site, _var_name: &str) {}
 }
 
 /// Most generic implementation used by all atomic tagged types (like Tagged<u32>).

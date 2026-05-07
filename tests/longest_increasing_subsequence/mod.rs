@@ -41,7 +41,7 @@ fn lis() {
         .register("haystack[16]", 17)
         .register("haystack[17]", 18)
         .register("haystack[18]", 19)
-        .register("haystack[19]", 20)
+        .register("haystack[19]", 20),
     );
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
@@ -68,7 +68,6 @@ fn lis() {
         .register("haystack[17]", 1)
         .register("haystack[18]", 1)
         .register("haystack[19]", 1)
-
         .register("return.0", 0)
         .register("return.1.length", 0)
         .register("return.1[0]", 1)
@@ -76,7 +75,7 @@ fn lis() {
         .register("return.1[2]", 1)
         .register("return.1[3]", 1)
         .register("return.1[4]", 1)
-        .register("return.1[5]", 1)
+        .register("return.1[5]", 1),
     );
 
     let executable = Path::new(file!()).parent().unwrap().join("lis.out");

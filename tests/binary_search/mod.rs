@@ -4,7 +4,7 @@ use crate::common::{
     ExpectedOutput, ExpectedSite, compile_and_execute, delete, prefix_with_path_from_root, verify,
 };
 
-// specifying this test just became really hard because of 
+// specifying this test just became really hard because of
 // allowing arrays to contain different ATs for elements.
 #[ignore]
 #[test]
@@ -72,7 +72,6 @@ fn binary_search() {
         .register("haystack[47]", 48)
         .register("haystack[48]", 49)
         .register("haystack[49]", 50)
-
         .register("needle", 51)
         .register("lo", 52)
         .register("hi", 53),
@@ -132,7 +131,6 @@ fn binary_search() {
         .register("haystack[47]", 48)
         .register("haystack[48]", 49)
         .register("haystack[49]", 50)
-
         .register("needle", 0)
         .register("lo", 1)
         .register("hi", 1), // FIXME: support Option variants

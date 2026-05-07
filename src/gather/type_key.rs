@@ -1,9 +1,15 @@
-/// Namespace key for an impl-method's enclosing impl block. Distinguishes
-/// inherent impls from trait impls so that impl Foo { fn bar() } and
-/// impl SomeTrait for Foo { fn bar() } don't collide in the
-/// (mod_path, type_key, method_ident) slot in FirstPassInfo.
-///
-/// Both paths are stored as fully qualified paths.
+//! Defines a namespace key for an impl-method's enclosing impl block that encodes
+//! both the self-type and optionally the name of the trait being implemented.
+//!
+//! Both the self-ty and the trait paths are stored as fully qualified paths. This allows them
+//! to be used to consistently lookup specific function information stored within the [`FnIndex`],
+//! inside the [`FirstPassInfo`] struct passed between the first and second compilation.
+//!
+//! [`TypeKey`]'s must be constructed from both AST and HIR information, which have different
+//! input information available regarding the specific impl block being considered, and use
+//! two different path representations. Therefore, use [`TypeKey::try_from_ast`] and
+//! [`TypeKey::try_from_hir`] appropriately, before passing the result to the [`FnIndex`].
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TypeKey {
     /// ::-joined path of the impl's self type,
@@ -13,6 +19,15 @@ pub struct TypeKey {
     /// Some(path) for `impl Trait for T`, None for inherent impls. Same
     /// ::-joined ident-only format as self_path.
     pub trait_path: Option<String>,
+}
+
+impl std::fmt::Display for TypeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.trait_path {
+            Some(t) => write!(f, "{} as {}", self.self_path, t),
+            None => f.write_str(&self.self_path),
+        }
+    }
 }
 
 impl TypeKey {
@@ -35,7 +50,6 @@ impl TypeKey {
     /// Creates a TypeKey for an impl block, derived from its `self_ty` and `of_trait`.
     ///
     /// Returns `None` when either path can't be canonicalized.
-    /// Mirrors gather_orig.rs::impl_type_key so both pass-1 and pass-2 produce identical keys.
     pub fn try_from_ast(
         of_trait: Option<&rustc_ast::TraitRef>,
         self_ty: &rustc_ast::Ty,
@@ -57,7 +71,7 @@ impl TypeKey {
     ///
     /// Returns None when the impl's self-type isn't a resolved path
     /// (slice/array/tuple/ref/trait-object/fn-pointer self-types)
-    // FIXME:  this needs to be more robust, we probably can support above types
+    // FIXME:  this could be more robust, we probably can support above types
     pub fn try_from_hir<'tcx>(
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
         method_ldid: rustc_span::def_id::LocalDefId,
@@ -87,19 +101,9 @@ impl TypeKey {
     }
 }
 
-impl std::fmt::Display for TypeKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.trait_path {
-            Some(t) => write!(f, "{} as {}", self.self_path, t),
-            None => f.write_str(&self.self_path),
-        }
-    }
-}
-
 //////// AST HELPERS //////////
 
 /// Canonical ::-joined string form of an AST path.
-/// Mirrors `gather_orig.rs::hir_path_canonical`.
 fn ast_path_canonical(path: &rustc_ast::Path) -> Option<String> {
     let mut parts = Vec::with_capacity(path.segments.len());
     for seg in path.segments.iter() {
@@ -108,7 +112,7 @@ fn ast_path_canonical(path: &rustc_ast::Path) -> Option<String> {
     Some(parts.join("::"))
 }
 
-// Canonicalizes a single segment of a path.
+// Canonicalizes a single segment of an AST path.
 fn ast_segment_canonical(seg: &rustc_ast::PathSegment) -> Option<String> {
     let ident = seg.ident.name.to_string();
     let Some(args) = &seg.args else {
@@ -142,7 +146,7 @@ fn ast_segment_canonical(seg: &rustc_ast::PathSegment) -> Option<String> {
     }
 }
 
-// Canonicalizes a Path type name
+// Canonicalizes an AST Path type name
 fn ast_ty_canonical(ty: &rustc_ast::Ty) -> Option<String> {
     if matches!(ty.kind, rustc_ast::TyKind::Infer) {
         panic!(
@@ -158,7 +162,7 @@ fn ast_ty_canonical(ty: &rustc_ast::Ty) -> Option<String> {
 
 //////// HIR HELPERS //////////
 
-/// HIR counterpart to `stubs.rs::ast_path_canonical`. Creates a
+/// HIR counterpart to `ast_path_canonical`. Creates a
 /// ::-joined ident<args> form string.
 ///
 /// Returns None on non-`AngleBracketed` args, associated-type
@@ -172,7 +176,7 @@ fn hir_path_canonical(path: &rustc_hir::Path<'_>) -> Option<String> {
     Some(parts.join("::"))
 }
 
-/// Gets the canonical representation of a single path segment.
+/// Gets the canonical representation of a single HIR path segment.
 fn hir_segment_canonical(seg: &rustc_hir::PathSegment<'_>) -> Option<String> {
     let ident = seg.ident.name.to_string();
     let Some(args) = seg.args else {
@@ -217,7 +221,7 @@ fn hir_segment_canonical(seg: &rustc_hir::PathSegment<'_>) -> Option<String> {
     }
 }
 
-/// Gets the canonical represetnation of this path type
+/// Gets the canonical representation of this HIR type
 fn hir_ty_canonical(ty: &rustc_hir::Ty<'_>) -> Option<String> {
     let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = ty.kind else {
         return None;

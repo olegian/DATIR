@@ -1,3 +1,8 @@
+//! Defines a function to transform a single Array/Repeat AST expression.
+//! 
+//! This expression requires utilizing the runtime library's `ATI::track_array(<array>)` function,
+//! to assign the length a dynamic Id.
+
 use crate::instrument::instrument::InstrumentingVisitor;
 
 /// Invoked whenever the visitor runs into a ExprKind::Array

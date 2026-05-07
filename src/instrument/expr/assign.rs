@@ -1,3 +1,9 @@
+//! Defines a function to transform a single Assign or AssignOp AST expression.
+//! 
+//! If the first compilation determines that this is assignment is assigning a value by
+//! derefencing a mutable reference, then the assignment needs to utilize the 
+//! `TaggedRefMut::assign` method call, to write both the value and the id.
+
 use rustc_ast_pretty::pprust;
 
 use crate::{common, instrument::instrument::InstrumentingVisitor};
@@ -6,8 +12,9 @@ use crate::{common, instrument::instrument::InstrumentingVisitor};
 ///
 /// Assigning through a TaggedRefMut requires rewriting `*lhs = rhs` to
 /// `lhs.assign(rhs)` so that both the id and the value are written.
-/// Walks the inner of the deref so it gets instrumented too. The rhs
-/// is already walked by the caller.
+/// Both `lhs` and `rhs` have already been instrumented by the caller
+/// (the LHS via place-walk, which dispatches `transform_expr` on the
+/// inner of any `Deref` it finds; the RHS via the normal value walk).
 pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut rustc_ast::Expr) {
     let rustc_ast::ExprKind::Assign(lhs, rhs, _) = &mut assign_expr.kind else {
         panic!(
@@ -18,7 +25,8 @@ pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut ru
 
     if !visitor
         .first_pass
-        .is_assign_through_tagged_ref_mut(assign_expr.span, visitor.psess.source_map())
+        .assign_through_tagged_ref_mut
+        .contains(assign_expr.span, visitor.psess.source_map())
     {
         return;
     }
@@ -26,8 +34,6 @@ pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut ru
     let rustc_ast::ExprKind::Unary(rustc_ast::UnOp::Deref, inner) = &mut lhs.kind else {
         return;
     };
-
-    rustc_ast::mut_visit::walk_expr(visitor, inner);
 
     let code = format!(
         "{}.assign({})",
@@ -57,7 +63,8 @@ pub fn transform_assign_op(
 
     if !visitor
         .first_pass
-        .is_assign_through_tagged_ref_mut(assign_op_expr.span, visitor.psess.source_map())
+        .assign_through_tagged_ref_mut
+        .contains(assign_op_expr.span, visitor.psess.source_map())
     {
         return;
     }
@@ -65,8 +72,6 @@ pub fn transform_assign_op(
     let rustc_ast::ExprKind::Unary(rustc_ast::UnOp::Deref, inner) = &mut lhs.kind else {
         return;
     };
-
-    rustc_ast::mut_visit::walk_expr(visitor, inner);
 
     let bin_op: rustc_ast::BinOpKind = op.node.into();
     let code = format!(

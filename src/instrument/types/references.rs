@@ -1,8 +1,20 @@
+//! Defines how references are transformed amidst the recursive tupling operation.
+//!
+//! A reference to an atomic primitive (&'a T) must become a TaggedRef<'a, T> (mutable, if
+//! necessary).
+//!
+//! A reference to a reference, or a reference to  a non-tuplable type T must remain unchanged.
+//!
+//! A reference to a slice must be converted to a TaggedRef<[T]>, with the inner type being
+//! recursively tupled.
+//!
+//! See [`recursively_transform_ast_type`] for more information on reccursive tupling.
+
 use rustc_ast_pretty::pprust;
 
 use crate::{common::CanBeTupled, instrument::types::recursively_transform_ast_type};
 
-/// Recursively transforms a reference type, taking &T -> TaggedRef<Tag(T)>,
+/// Recursively transforms a reference type, taking &T -> TaggedRef<Tag(T)> when necessary,
 /// alongside it's mutable counterpart.
 pub fn transform_reference(target_ty: &mut rustc_ast::Ty) {
     let rustc_ast::TyKind::Ref(_lt, rustc_ast::MutTy { box ty, mutbl }) = &mut target_ty.kind
@@ -45,7 +57,7 @@ pub fn transform_reference(target_ty: &mut rustc_ast::Ty) {
     }
 }
 
-/// Directly modifies a type `T` into `TaggedRef(Mut?)<T>`.
+/// Modifies in place a type `T` into `TaggedRef(Mut?)<T>`.
 /// The caller is responsible for having already
 /// tupled any sub-element types (e.g. the element type of a slice/array);
 /// this helper only wraps the outer shape.

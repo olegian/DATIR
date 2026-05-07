@@ -5,17 +5,8 @@ struct MyStruct {
 }
 
 fn main() {
-    let a = [MyStruct {a: 0, b: [1; 3]}; 3];
-    let b = [
-        MyStruct {
-            a: 2, 
-            b: [3; 3],
-        },
-        MyStruct {
-            a: 4, 
-            b: [5; 3],
-        },
-    ];
+    let a = [MyStruct { a: 0, b: [1; 3] }; 3];
+    let b = [MyStruct { a: 2, b: [3; 3] }, MyStruct { a: 4, b: [5; 3] }];
 
     foo(&a, b, 100);
 }
@@ -26,4 +17,3 @@ fn foo(a: &[MyStruct], b: [MyStruct; 2], c: u32) -> usize {
 
     a.len() + b.len()
 }
-

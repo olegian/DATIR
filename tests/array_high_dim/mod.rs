@@ -34,7 +34,6 @@ fn array_2d() {
         .register("arr[2][0].length", 3)
         .register("arr[2][1].length", 4)
         .register("arr[2][2].length", 5)
-
         .register("arr[0][0][0]", 0)
         .register("arr[0][0][1]", 0)
         .register("arr[0][0][2]", 0)
@@ -44,7 +43,6 @@ fn array_2d() {
         .register("arr[0][2][0]", 2)
         .register("arr[0][2][1]", 2)
         .register("arr[0][2][2]", 2)
-
         .register("arr[1][0][0]", 0)
         .register("arr[1][0][1]", 0)
         .register("arr[1][0][2]", 0)
@@ -54,7 +52,6 @@ fn array_2d() {
         .register("arr[1][2][0]", 2)
         .register("arr[1][2][1]", 2)
         .register("arr[1][2][2]", 2)
-
         .register("arr[2][0][0]", 0)
         .register("arr[2][0][1]", 0)
         .register("arr[2][0][2]", 0)
@@ -64,7 +61,6 @@ fn array_2d() {
         .register("arr[2][2][0]", 2)
         .register("arr[2][2][1]", 2)
         .register("arr[2][2][2]", 2)
-
         .register("a", 8)
         .register("b", 9)
         .register("unused", 10),
@@ -86,7 +82,6 @@ fn array_2d() {
         .register("arr[2][0].length", 3)
         .register("arr[2][1].length", 4)
         .register("arr[2][2].length", 5)
-
         .register("arr[0][0][0]", 0)
         .register("arr[0][0][1]", 0)
         .register("arr[0][0][2]", 0)
@@ -96,7 +91,6 @@ fn array_2d() {
         .register("arr[0][2][0]", 2)
         .register("arr[0][2][1]", 2)
         .register("arr[0][2][2]", 2)
-
         .register("arr[1][0][0]", 0)
         .register("arr[1][0][1]", 0)
         .register("arr[1][0][2]", 0)
@@ -106,7 +100,6 @@ fn array_2d() {
         .register("arr[1][2][0]", 2)
         .register("arr[1][2][1]", 2)
         .register("arr[1][2][2]", 2)
-
         .register("arr[2][0][0]", 0)
         .register("arr[2][0][1]", 0)
         .register("arr[2][0][2]", 0)
@@ -116,11 +109,10 @@ fn array_2d() {
         .register("arr[2][2][0]", 2)
         .register("arr[2][2][1]", 2)
         .register("arr[2][2][2]", 2)
-
         .register("a", 6)
         .register("b", 0)
         .register("unused", 10)
-        .register("return", 11)
+        .register("return", 11),
     );
 
     let executable = Path::new(file!())

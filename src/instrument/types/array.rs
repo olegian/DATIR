@@ -1,3 +1,7 @@
+//! Defines how arrays are transformed amidst the recursive tupling operation.
+//!
+//! See [`recursively_transform_ast_type`].
+
 use rustc_ast_pretty::pprust;
 
 use crate::instrument::types::recursively_transform_ast_type;
@@ -13,13 +17,14 @@ pub fn transform_array(target_ty: &mut rustc_ast::Ty) {
 
     recursively_transform_ast_type(ty);
 
-    let mut tagged_array = rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str("Tagged"));
+    let mut tagged_array =
+        rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str("Tagged"));
     tagged_array.args = Some(Box::new(rustc_ast::GenericArgs::AngleBracketed(
         rustc_ast::AngleBracketedArgs {
             span: rustc_span::DUMMY_SP,
-            args: [rustc_ast::AngleBracketedArg::Arg(rustc_ast::GenericArg::Type(
-                Box::new(target_ty.clone()),
-            ))]
+            args: [rustc_ast::AngleBracketedArg::Arg(
+                rustc_ast::GenericArg::Type(Box::new(target_ty.clone())),
+            )]
             .into(),
         },
     )));

@@ -1,3 +1,6 @@
+//! Defines a function to transform a range to the DATIRs range representation, using the 
+//! runtime librarys `ATI::track_range*` calls.
+
 use rustc_ast_pretty::pprust;
 
 use crate::{common, instrument::instrument::InstrumentingVisitor};

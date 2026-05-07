@@ -1,9 +1,11 @@
-/* Before we can perform the required AST mutation, we need to gather
- * some type information about the original source code. This is done by
- * invoking the compiler and passing in the GatherAtiInfo callback struct
- * defined in this file. See after_expansion below for more specific information
- * on what information is gathered.
-*/
+//! Defines the callbacks used by the first "Gather" compilation performed by DATIR.
+//!
+//! Before we can perform the required AST mutation, we need to gather
+//! some type information about the original source code. This is done by
+//! invoking the compiler and passing in the [`GatherAtiInfo`] callback struct
+//! defined here. See [`GatherAtiInfo::after_expansion`] for more specific information
+//! on what information is collected.
+
 use rustc_ast as ast;
 use rustc_driver::Compilation;
 use rustc_hir::def_id::{CRATE_DEF_ID, LocalDefId};
@@ -16,21 +18,9 @@ use decls_gen::{DeclsFile, VarIdent};
 use crate::{
     common::DatirConfig,
     gather::analyze_hir::AnalyzeHirVisitor,
-    gather::first_pass::{FirstPassInfo, ModPath},
+    gather::first_pass_info::{FirstPassInfo, FnNamespace, ModPath},
     gather::type_key::TypeKey,
 };
-
-/// Module path for `ldid`s enclosing module, joined by ::. For the crate root
-/// this returns an empty string.
-fn mod_path_of<'tcx>(tcx: TyCtxt<'tcx>, ldid: LocalDefId) -> ModPath {
-    let parent_mod = tcx.parent_module_from_def_id(ldid);
-    if parent_mod.to_local_def_id() == CRATE_DEF_ID {
-        String::new()
-    } else {
-        tcx.def_path_str(parent_mod.to_def_id())
-    }
-}
-
 /// Defines the callbacks used for the first information-gathering compilation.
 pub struct GatherAtiInfo {
     /// Contains the information discovered after executing the compilation.
@@ -47,19 +37,22 @@ impl GatherAtiInfo {
         }
     }
 
-    /// Pulls out all gathered info that this compiler invocation learned.
+    /// Consumes the callback struct, returning all gathered info.
     /// Must be called after the first compilation is performed.
     pub fn into_first_pass_info(self) -> FirstPassInfo {
         self.first_pass
     }
 
-    /// For the given function identified by `local_def_id`, get the base_ppt_name
+    /// For the given function identified by `local_def_id`, get the `base_ppt_name`
     /// which corresponds to it (i.e. everything before :::{ENTER|EXIT|EXITNN} in
-    /// the decls file). Validate that the loaded decls file contains the matching
-    /// ENTER and EXIT program points, that every formal parameter has a
-    /// `VariableDecl` on both, and that any non-unit return value has a return
-    /// `VariableDecl` on EXIT. Store the fn ident, def id, and base_ppt_name in
-    /// FirstPassInfo.
+    /// the decls file). Then validate:
+    /// 1. the loaded decls file contains the matching ENTER and EXIT program points,
+    /// 2. every formal parameter has a `VariableDecl` on both ppts,
+    /// 3. any non-unit return value has a `return` `VariableDecl` on the EXIT ppt.
+    ///
+    /// If this is a valid function, store the `base_ppt_name` in FirstPassInfo,
+    /// keyed by the functions file location / module path, for use in the second
+    /// compilation.
     fn record_fn<'tcx>(
         &mut self,
         tcx: TyCtxt<'tcx>,
@@ -120,6 +113,7 @@ impl GatherAtiInfo {
             }
         }
 
+        // If the function returns some value, then the EXIT ppt must have a return VarDecl.
         let return_ty = tcx
             .fn_sig(local_def_id)
             .instantiate_identity()
@@ -132,16 +126,24 @@ impl GatherAtiInfo {
             );
         }
 
+        // The function is valid, and capable of being instrumented.
+        // Determine in what file / module this function is located, and store it in
+        // FirstPassInfo.
         let mod_path = mod_path_of(tcx, local_def_id);
-        self.first_pass.observe_fn(
-            mod_path,
-            type_key,
-            ident,
-            local_def_id.to_def_id(),
-            base_ppt_name,
-        );
+        let ns = match &type_key {
+            None => FnNamespace::Free,
+            Some(tk) => FnNamespace::Method(tk),
+        };
+        self.first_pass
+            .fns
+            .record(mod_path, ns, ident, local_def_id.to_def_id(), base_ppt_name);
     }
 
+    /// Finds all functions/methods that are going to be instrumented, in the crate
+    /// currently being compiled. Validate each function signature against the previously
+    /// loaded DeclsFile within the DATIR configuration.
+    ///
+    /// Store all functions-to-be-instrumented in FirstPassInfo.
     fn find_instrumented_functions<'tcx>(&mut self, tcx: rustc_middle::ty::TyCtxt<'tcx>) {
         for local_def_id in tcx.hir_body_owners() {
             let node = tcx.hir_node_by_def_id(local_def_id);
@@ -211,12 +213,16 @@ impl GatherAtiInfo {
     }
 }
 
+/// This trait is required to be defined so that this struct
+/// can be passed to rustc.
 impl rustc_driver::Callbacks for GatherAtiInfo {
     /// Disables everything after MIR construction
     fn config(&mut self, config: &mut interface::Config) {
         config.opts.unstable_opts.no_codegen = true;
     }
 
+    /// No-op, we do not need to perform any modifications to the loaded AST at
+    /// this stage, we just need to collect information on the HIR/MIR.
     fn after_crate_root_parsing(
         &mut self,
         _compiler: &interface::Compiler,
@@ -227,22 +233,21 @@ impl rustc_driver::Callbacks for GatherAtiInfo {
 
     /// This is where the key functionality of this compiler invocation lies.
     /// Overall, the following is performed:
-    ///   1. Find all locations (code spans) where:
-    ///       a.
-    ///   2. Find all invocations of functions that are not defined in the instrumented files
-    ///      (calls to code in libraries which was left uninstrumented).
+    ///   1. Find all functions/methods that are going to be instrumented, and record
+    ///      the `base_ppt_name` associated with each one within the program's .decls file.
+    ///      This mapping is important so that the second pass creates program points with
+    ///      appropriate names that can be merged into the .decls file.
     ///
-    /// As of 3/29/26, we are choosing to ignore uninstrumented libraries, meaning that
-    /// (2) is really an unnecessary step. The goal is to instrument the standard library at least
-    /// and after that is done, determine what needs to be added to this code to appropriately handle
-    /// uninstrumented library code. The code is still left, as a proof-of-concept for later
+    ///   2. Find all locations (code spans) detailed in [crate::gather::analyze_hir].
     fn after_expansion<'tcx>(
         &mut self,
         _compiler: &interface::Compiler,
         tcx: TyCtxt<'tcx>,
     ) -> Compilation {
+        // 1.
         self.find_instrumented_functions(tcx);
 
+        // 2.
         let mut find_calls_visitor = AnalyzeHirVisitor {
             tcx,
             first_pass: &mut self.first_pass,
@@ -263,5 +268,31 @@ impl rustc_driver::Callbacks for GatherAtiInfo {
         _tcx: TyCtxt<'tcx>,
     ) -> Compilation {
         Compilation::Continue
+    }
+}
+
+/// Module path for `ldid`s enclosing module, joined by ::. For the crate root
+/// this returns an empty string.
+///
+/// # Examples:
+/// Assume this is a file, `/path/from/root/dep.rs`, and `foo` has `ldid = 1`
+/// and `submod::bar` has `ldid = 2`.
+/// ```rust
+/// fn foo() { ... }
+///
+/// mod submod {
+///     fn bar() { ... }
+/// }
+/// ```
+///
+/// Then, `mod_path_of(tcx, 1)` returns `"dep::foo"`, and `mod_path_of(tcx, 2)`
+/// returns `"dep::submod::bar"`. If the file was instead the `main.rs` or
+/// `lib.rs` file, then the first `dep::` would be excluded.
+fn mod_path_of<'tcx>(tcx: TyCtxt<'tcx>, ldid: LocalDefId) -> ModPath {
+    let parent_mod = tcx.parent_module_from_def_id(ldid);
+    if parent_mod.to_local_def_id() == CRATE_DEF_ID {
+        String::new()
+    } else {
+        tcx.def_path_str(parent_mod.to_def_id())
     }
 }

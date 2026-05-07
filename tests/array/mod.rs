@@ -17,7 +17,7 @@ fn array() {
         ExpectedSite::new(prefix_with_path_from_root("array/main.rs::foo:::ENTER"))
             // .register_array("arr", vec![3], 0, vec![1])
             .register("arr.length", 1)
-            .register("arr[0]", 2)  // constructed via repeat op
+            .register("arr[0]", 2) // constructed via repeat op
             .register("arr[1]", 2)
             .register("arr[2]", 2)
             .register("x", 3)
@@ -38,7 +38,7 @@ fn array() {
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root("array/main.rs::bar:::ENTER"))
             .register("arr.length", 1)
-            .register("arr[0]", 2)  // constructed as explcit array
+            .register("arr[0]", 2) // constructed as explcit array
             .register("arr[1]", 3)
             .register("arr[2]", 4)
             .register("unused", 5)

@@ -1,17 +1,46 @@
-/* Entry point file for DATIR.
- * This file creates and orchestrates the multiple compiler invocations
- * required to perform abstract type inference. The first compilation
- * gathers necessary information about the source code (namely some type
- * information), which the second compilation uses to actually mutate the
- * AST and to add in dynamic instrumentation.
-*/
-#![feature(rustc_private)]
-#![feature(box_patterns)]
-#![feature(min_specialization)]
-#![feature(step_trait)]
-#![feature(unsize)]
-#![feature(coerce_unsized)]
+//! DATIR entry points.
+//!
+//! This file parses input command line arguments, then
+//! creates and orchestrates the multiple compiler invocations
+//! required to perform abstract type inference.
+//!
+//! The first compilation gathers necessary information about the source code
+//! (namely some type information), which the second compilation uses to actually mutate the
+//! AST and to add in dynamic instrumentation.
+//!
+//! See --help for usage instructions.
 
+// DATIR utilizes the following unstable compiler features:
+// provides access to rustc internal functions
+#![feature(rustc_private)]
+// allows using the `box` keyword in patterns to match on std::Box
+#![feature(box_patterns)]
+// allows performing trait specialization, i.e. impl trait for T and impl trait
+#![feature(min_specialization)]
+
+// allows performing trait specialization, which the runtime ati library
+// makes heavy use of to dispatch the appropriate function during monomorphization.
+// In other words, if we define some trait MyTrait, and then implement:
+// > impl<T>    MyTrait for T          { fn foo() ... }
+// > impl<T>    MyTrait for &T         { fn foo() ... }
+// > impl<T, N> MyTrait for [T; N]     { fn foo() ... }
+// > impl<T>    MyTrait for Wrapper<T> { fn foo() ... }
+// we can always call T.foo(), regardless of what T is, as there is a
+// default implementation for all generic Ts. However, if T.foo() is invoked,
+// and T is actually a Wrapper<T>, then it will dispatch the foo() defined
+// for Wrapper<T> rather than for T. Without min_specialization, those trait
+// implementations would overlap.
+// Note: full_specialization is unsound, and also unnecessary here.
+// Note: This feature is only necessary if `mod ati` is uncommented below.
+// #![feature(step_trait)]
+
+// allows defining a Dynamically Sized Type (used for representing Tagged References
+// to Unsized types like [T]) while allowing automatic coercion from a Sized type.
+// Note: These features are only necessary if `mod ati` is uncommented below.
+// #![feature(unsize)]
+// #![feature(coerce_unsized)]
+
+// All linked in rustc_private crates
 extern crate rustc_ast;
 extern crate rustc_ast_pretty;
 extern crate rustc_driver;
@@ -25,40 +54,99 @@ extern crate rustc_span;
 extern crate smallvec;
 extern crate thin_vec;
 
-use std::{env, sync::Arc};
-
-use crate::args::{ArgParser, ArgSpec};
 use crate::common::DatirConfig;
-
 use decls_gen::DeclsFile;
 
-// included so VsCode's rust-analyzer extension runs static analysis on the runtime library
-mod ati;
+// include so VsCode's rust-analyzer extension runs static analysis on the runtime library
+// mod ati;
 
 mod args;
 mod callbacks;
+mod codegen;
 mod common;
-mod file_loaders;
-
+mod file_loader;
 mod gather;
 mod instrument;
-mod codegen;
 
-/// Entry-point. Parses DATIR's own command-line options, then forwards just
-/// the source file path to each rustc compiler invocation.
+/// Errors produced by [`run`].
+#[derive(Debug)]
+pub enum DatirError {
+    BadInput(&'static str),
+}
+
+impl std::fmt::Display for DatirError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatirError::BadInput(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+/// Executes DATIR end-to-end: runs both compiler passes against `target`,
+/// producing an instrumented binary at `output` (or rustc's default location
+/// if `None`). Use this entrypoint to invoke DATIR programmatically.
+pub fn run(
+    config: DatirConfig,
+    target: &std::path::Path,
+    output: Option<&std::path::Path>,
+) -> Result<(), DatirError> {
+    let mut rustc_args = vec![
+        "datir".to_string(),
+        target
+            .to_str()
+            .ok_or(DatirError::BadInput(
+                "Unable to parse input target path as UTF-8 string.",
+            ))?
+            .to_string(),
+    ];
+
+    if let Some(output) = output {
+        let output = output.to_str().ok_or(DatirError::BadInput(
+            "Unable to parse output path as UTF-8 string.",
+        ))?;
+        rustc_args.push(format!("-o{output}"));
+    }
+
+    if config.print_config {
+        config.log("Config", format!("{:#?}", config));
+    }
+
+    // The gather compilation
+    // panics on compilation failure, therefore by the time the instrument
+    // compilation starts, we know we are working with a semantically correct rust program
+    let config = std::sync::Arc::new(config);
+    let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
+    rustc_driver::run_compiler(&rustc_args, &mut gather_info);
+    let first_pass = gather_info.into_first_pass_info();
+
+    // The instrument compilation
+    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(
+        first_pass,
+        config.clone(),
+    );
+    rustc_driver::run_compiler(&rustc_args, &mut cbs);
+
+    Ok(())
+}
+
+/// Parses DATIR's command-line options into the
+/// inputs that [`run`] expects, then delegates.
 pub fn main() {
-    let program = env::args().next().unwrap_or_else(|| "datir".to_string());
-    let parser = arg_init(&program);
-    let args = parser.parse_env();
+    // this is mostly a placeholder string, for printing a nice usage message.
+    let program = std::env::args()
+        .next()
+        .unwrap_or_else(|| "datir".to_string());
+    let args = args::datir_arg_init(&program).parse_env();
 
     // Get path to main/lib.rs file being instrumented.
-    let target_file = args
-        .get_value("file")
-        .expect("parser guarantees `file` is present")
-        .to_string();
-    let target_path = std::path::PathBuf::from(&target_file);
+    let target_path = std::path::PathBuf::from(
+        args.get_value("file")
+            .expect("parser guarantees `file` is present"),
+    );
 
-    // Generate / parse related .decls file.
+    // Generate / parse related .decls file. When generating fresh, also
+    // write it to disk, so subsequent runs can reuse it via
+    // --decls-path.
     let decls_file = if let Some(path) = args.get_value("decls-path") {
         let decls_path = std::path::PathBuf::from(path);
         match DeclsFile::from_decls_file(&decls_path) {
@@ -69,121 +157,37 @@ pub fn main() {
         }
     } else {
         let depth = (!args.is_present("test")).then(|| {
-            let d = args
-                .get_value("rec-depth")
-                .expect("Rec Depth did not have a value (even though it is default specified)");
-            d.parse::<usize>()
+            args.get_value("rec-depth")
+                .expect("Rec Depth did not have a value (even though it is default specified)")
+                .parse::<usize>()
                 .expect("Unable to interpret rec-depth as an integer.")
         });
 
-        DeclsFile::from_source_file(&target_path, depth)
+        let decls_file = DeclsFile::from_source_file(&target_path, depth);
+        decls_file
+            .write_to_file(&target_path.with_extension("decls"))
+            .expect("unable to write decls file to disk");
+        decls_file
     };
 
     // Construct config based on mode.
     let config = if let Some(dir_path) = args.get_value("release") {
-        // remove stale files in output.
         let raw = std::path::PathBuf::from(dir_path);
         let _ = std::fs::remove_dir_all(&raw);
-        std::fs::create_dir_all(&raw)
-            .expect("Unable to create ATI output directory.");
-
-        let output = std::fs::canonicalize(&raw)
-            .expect("Unable to canonicalize ATI output directory.");
-        DatirConfig::release(decls_file, output)
+        std::fs::create_dir_all(&raw).expect("Unable to create ATI output directory.");
+        let output_dir =
+            std::fs::canonicalize(&raw).expect("Unable to canonicalize ATI output directory.");
+        DatirConfig::release(decls_file, output_dir)
     } else if args.is_present("test") {
         DatirConfig::test(decls_file)
     } else {
         DatirConfig::debug(decls_file)
     };
 
-    // Construct arguments to pass to rustc
-    let mut compiler_args = vec![program, target_file];
-    if let Some(output) = args.get_value("output") {
-        compiler_args.push(format!("-o{output}"));
+    let output_path = args.get_value("output").map(std::path::PathBuf::from);
+
+    if let Err(e) = run(config, &target_path, output_path.as_deref()) {
+        eprintln!("datir: {e}");
+        std::process::exit(1);
     }
-
-    if config.print_config {
-        config.log("Config", format!("{:#?}", config));
-    }
-
-    // The gather compilation
-    // panics on compilation failure, therefore by the time the instrument
-    // compilation starts, we know we are working with a semantically correct rust program
-    let config = Arc::new(config);
-    let mut gather_info = callbacks::gather_orig::GatherAtiInfo::new(config.clone());
-    rustc_driver::run_compiler(&compiler_args, &mut gather_info);
-    let first_pass = gather_info.into_first_pass_info();
-
-    // The instrument compilation
-    let mut cbs = callbacks::transform_ast::TransformAbstractSyntaxTreeCallbacks::new(
-        first_pass,
-        config.clone(),
-    );
-    rustc_driver::run_compiler(&compiler_args, &mut cbs);
-
-    if !args.is_present("decls-path") {
-        // output the decls file if we didnt parse one in.
-        config
-            .decls_file
-            .write_to_file(&target_path.with_extension("decls"))
-            .expect("unable to write decls file to disk");
-    }
-}
-
-fn arg_init(program_name: &str) -> ArgParser {
-    let parser = ArgParser::new(
-        program_name,
-        "DATIR: dynamic abstract type inference for Rust",
-    )
-    .arg(ArgSpec::positional(
-        "file",
-        "FILE",
-        "Path to root source file to instrument",
-    ))
-    .arg(
-        ArgSpec::keyword(
-            "output",
-            "Location of produced executable with added instrumentation",
-        )
-        .short("-o")
-        .long("--output")
-        .value_name("PATH"),
-    )
-    .arg(
-        ArgSpec::keyword(
-            "release",
-            "Run in release mode, skipping debug logging, also creating .ati files\
-             whenever the output binary is executed in the directory pointed to by ATI_OUT_DIR_PATH",
-        )
-        .long("--release")
-        .short("-r")
-        .value_name("ATI_OUT_DIR_PATH")
-    )
-    .arg(
-        ArgSpec::keyword(
-            "decls-path",
-            "Rather than regenerating a decls file, parse in an existing one specified by PATH.",
-        )
-        .short("-d")
-        .long("--decls-path")
-        .value_name("PATH"),
-    )
-    .arg(
-        ArgSpec::keyword(
-            "rec-depth",
-            "The recursive depth with which to expand all variables at each program point. \
-             Defaults to 3. Only useful if --decls-path is left unspecified ",
-        )
-        .short("-rd")
-        .long("--rec-depth")
-        .value_name("INT_DEPTH")
-        .default_value("3"),
-    )
-    .arg(ArgSpec::flag(
-        "test",
-        "--test",
-        "Run in test mode, skipping debug logging, and using regular print ATI output",
-    ));
-
-    parser
 }

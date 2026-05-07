@@ -8,15 +8,15 @@ fn main() {
     foo(x, y, z);
     // 1 and 2 have interacted,
     // in this invocation, we have that parameter foo::x
-    // was previously assigned x at the start, therefore 
+    // was previously assigned x at the start, therefore
     // the AT of foo::x was the leader of 1's interaction
     // set, which has previously interacted with 2.
     // the AT of foo::y was the leader of 2's interaction set,
-    // which previously interacted with 1, (so foo::x and foo::y are 
+    // which previously interacted with 1, (so foo::x and foo::y are
     // in the same AT).
-    // During this call, foo::x is assigned 3, which makes the AT of 
+    // During this call, foo::x is assigned 3, which makes the AT of
     // foo::x represented by leader of the 1/2 interaction set,
-    // unioned with the leader of 3's interaction set, which means 
+    // unioned with the leader of 3's interaction set, which means
     // all vars are in the same AT.
     // foo(z, x, z);
     // 1 and 2 have interacted,

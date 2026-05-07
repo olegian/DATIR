@@ -15,7 +15,7 @@ use rustc_ast_pretty::pprust;
 use rustc_span::symbol::kw;
 
 use crate::common::{self, DatirConfig, parsing};
-use crate::gather::first_pass::FirstPassInfo;
+use crate::gather::first_pass_info::{FirstPassInfo, FnNamespace};
 use crate::gather::type_key::TypeKey;
 
 // FIXME: time for another rewrite.. this is unruly
@@ -91,7 +91,7 @@ fn generate_stubs_in_mod(
                 // find a name for the function which does not conflict with
                 // any other name in the current module namespace.
                 let orig_name = ident.as_str().to_string();
-                let known_names = first_pass.known_fn_names_in(mod_path, None);
+                let known_names = first_pass.fns.names_in(mod_path, FnNamespace::Free);
                 let inner_name = get_unique_inner_name(&orig_name, &known_names);
                 if datir_config.print_function_signatures {
                     datir_config.log(
@@ -105,10 +105,11 @@ fn generate_stubs_in_mod(
 
                 // find the name of the base program point name, discovered in the first pass
                 let entry = first_pass
-                    .lookup_free_fn(mod_path, ident.as_str())
+                    .fns
+                    .lookup(mod_path, FnNamespace::Free, ident.as_str())
                     .unwrap_or_else(|| {
                         panic!(
-                            "stub generation could not find a FnEntry for free fn \
+                            "stub generation could not find a FnBasePptName for free fn \
                              `{orig_name}` in module `{mod_path}`"
                         )
                     });
@@ -145,17 +146,17 @@ fn generate_stubs_in_mod(
                 // exit site. Pass 1 already validated existence of both ppts.
                 let enter_ppt = datir_config
                     .decls_file
-                    .enter_ppt(&entry.base_ppt_name)
+                    .enter_ppt(entry)
                     .expect("ENTER ppt missing.");
                 let exit_ppt = datir_config
                     .decls_file
-                    .exit_ppt(&entry.base_ppt_name)
+                    .exit_ppt(entry)
                     .expect("EXIT ppt missing");
 
                 // construct the "stub code", and insert it where the original body was.
                 let wrapper_src = build_fn_wrapper_block(
                     datir_config,
-                    &entry.base_ppt_name,
+                    entry,
                     &orig_name,
                     &inner_name,
                     &decl.inputs,
@@ -219,7 +220,9 @@ fn generate_stubs_in_mod(
                     .map(|h| h.trait_ref.path.segments.clone());
 
                 // all items in this impl will be in this namespace
-                let known_names = first_pass.known_fn_names_in(mod_path, Some(&type_key));
+                let known_names = first_pass
+                    .fns
+                    .names_in(mod_path, FnNamespace::Method(&type_key));
 
                 let mut inner_templates: Vec<String> = Vec::new();
                 let mut taken_bodies = Vec::new();
@@ -251,10 +254,11 @@ fn generate_stubs_in_mod(
                     }
 
                     let entry = first_pass
-                        .lookup_method(mod_path, &type_key, ident.as_str())
+                        .fns
+                        .lookup(mod_path, FnNamespace::Method(&type_key), ident.as_str())
                         .unwrap_or_else(|| {
                             panic!(
-                                "stub generation could not find a FnEntry for method \
+                                "stub generation could not find a FnBasePptName for method \
                                  `{type_key}::{orig_name}` in module `{mod_path}`; \
                                  pass 1 should have populated FirstPassInfo for every \
                                  tracked method"
@@ -297,18 +301,18 @@ fn generate_stubs_in_mod(
                     // the exit site (e.g. owned `self` is dead at exit unless Copy).
                     let enter_ppt = datir_config
                         .decls_file
-                        .enter_ppt(&entry.base_ppt_name)
+                        .enter_ppt(entry)
                         .expect("ENTER ppt missing, should have been validated in pass 1");
                     let exit_ppt = datir_config
                         .decls_file
-                        .exit_ppt(&entry.base_ppt_name)
+                        .exit_ppt(entry)
                         .expect("EXIT ppt missing, should have been validated in pass 1");
 
                     // replace the existing method body with the stub code,
                     // the code that creates ENTER/EXIT points, and calls
                     // the inner function inside of it.
                     let wrapper_src = build_method_wrapper_block(
-                        &entry.base_ppt_name,
+                        entry,
                         &inner_name,
                         &decl.inputs,
                         &decl.output,
@@ -492,7 +496,7 @@ fn where_clause_to_string(generics: &ast::Generics) -> String {
                     format!("{}: {}", lifetime, pprust::bounds_to_string(&rp.bounds))
                 }
             }
-            ast::WherePredicateKind::EqPredicate(ep) => {
+            ast::WherePredicateKind::EqPredicate(_) => {
                 unreachable!("Found unsupported EqPredicate in where clause")
             }
         })
@@ -503,7 +507,7 @@ fn where_clause_to_string(generics: &ast::Generics) -> String {
 
 /// Creates an inner name that does not clash with any other function/method
 /// defined in the same `(mod_path, namespace)` slot. `known` is the set of
-/// existing fn/method names in that slot, see `FirstPassInfo::known_fn_names_in`
+/// existing fn/method names in that slot, see `FnIndex::names_in`
 fn get_unique_inner_name(original: &str, known: &std::collections::HashSet<String>) -> String {
     let mut suffix = 0;
     let mut candidate = format!("{original}{suffix}");

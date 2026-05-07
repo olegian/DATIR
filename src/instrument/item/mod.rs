@@ -1,8 +1,26 @@
+//! Defines [`transform_item`], which governs how rustc_ast::Items are transformed to include
+//! instrumentation.
+//!
+//! Items are top level nodes within the compiled crate, governing function definitions, struct
+//! definitions, enum definitions, trait definitions and sub modules.
+//!
+//! Items consist of other AST nodes that require expression and type-level transformation.
+//! Expressions are transformed according to [crate::instrument::expr], types are transformed
+//! according to [crate::instrument::types].
+//!
+//! Functions have their bodies instrumented, and input parameter and return types transformed.
+//! Struct definitions have thier field types transformed.
+//! Enum definitions have the fields of each variant transformed.
+//! Trait definitions have default function implementations instrumented.
+//! Impl blocks have each method instrumented, and input parameter and return types transformed
+//! Items within submodules are recursively transformed.
+
 use crate::instrument::instrument::InstrumentingVisitor;
 
 mod bodies;
 pub mod data_types;
 
+/// Recursively instruments this item, with respect to the item kind.
 pub fn transform_item<'session>(
     visitor: &mut InstrumentingVisitor<'session>,
     item: &mut rustc_ast::Item,

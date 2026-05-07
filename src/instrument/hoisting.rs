@@ -1,7 +1,19 @@
-use rustc_ast_pretty::pprust;
+//! Defines functions used by the [`InstrumentingVisitor`] to hoist statements, avoiding dropping
+//! temporary values while holding references to them.
+//!
+//! Because instrumentation inserts method calls on Tagged<T>s, some calls consume a
+//! temporary value and return an reference to it. This requires the temporary value to be bound
+//! to a variable before the reference is constructed, to avoid dropping the value on exit from the
+//! method and creating a dangling reference.
+//!
+//! Invoking [`maybe_hoist_binding`] will take a statement, recurse into it to find all places
+//! a temporary is created before being passed to a ATI library function, and create multiple
+//! statements out of the one, binding each temporary to a variable with a unique name.
 
 use crate::{common, instrument::instrument::InstrumentingVisitor};
 
+/// Hoist any method invocations to ATI library functions within this statement
+/// by creating temporary let-bindings.
 pub fn maybe_hoist_binding(
     visitor: &mut InstrumentingVisitor,
     mut stmt: rustc_ast::Stmt,
@@ -19,12 +31,19 @@ pub fn maybe_hoist_binding(
     hoists
         .into_iter()
         .map(|(name, recv)| {
-            let code = format!("let mut {name} = {};", pprust::expr_to_string(&recv));
+            let code = format!(
+                "let mut {name} = {};",
+                rustc_ast_pretty::pprust::expr_to_string(&recv)
+            );
             common::parse_stmt(visitor.psess, code)
         })
-        .chain(std::iter::once(stmt)).collect()
+        .chain(std::iter::once(stmt))
+        .collect()
 }
 
+/// Recurse into a statement to find all places where a hoist is necessary,
+/// populating `hoists` with tuples of unique variable name strings and the corresponding
+/// expressions that are going to be bound to it.
 fn collect_hoists(
     visitor: &mut InstrumentingVisitor,
     expr: &mut rustc_ast::Expr,
@@ -112,12 +131,25 @@ fn collect_hoists(
     hoists.push((name, old_recv));
 }
 
+/// Returns true if this expression requires a hoist to be included.
+/// Expressions require a hoist if it is a method call to one of the library functions,
+/// and the expression is already not bound to a place.
 fn requires_hoist(expr: &rustc_ast::Expr) -> bool {
-    matches!( &expr.kind, rustc_ast::ExprKind::MethodCall(mc)
-            if matches!(mc.seg.ident.name.as_str(), "as_tagged_ref" | "as_tagged_ref_mut" | "subslice" | "subslice_mut")
-                && !is_place_expr(&mc.receiver))
+    matches!(
+        &expr.kind,
+        rustc_ast::ExprKind::MethodCall(mc)
+        if matches!(
+            mc.seg.ident.name.as_str(),
+            "as_tagged_ref"
+            | "as_tagged_ref_mut"
+            | "subslice"
+            | "subslice_mut"
+        ) && !is_place_expr(&mc.receiver)
+    )
 }
 
+/// Returns true if this expression is already in a place context, in which case the expression
+/// is already bound and does not need a hoist.
 fn is_place_expr(expr: &rustc_ast::Expr) -> bool {
     matches!(
         expr.kind,

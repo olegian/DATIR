@@ -1,3 +1,9 @@
+//! Defines functions to transform control flow expressions, if, while, for, loop, and match.
+//! 
+//! Conditions must be untupled before being consumed by the statement, as long as the condition
+//! evalutes to a Tagged<bool>. If the condition contains a pattern-matching let-binding, then
+//! the condition will already be a simple bool.
+
 use crate::instrument::{expr::common, instrument::InstrumentingVisitor};
 
 /// Invoked whenever the visitor runs into a ExprKind::If.

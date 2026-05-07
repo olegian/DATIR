@@ -1,4 +1,7 @@
-use rustc_ast_pretty::pprust;
+//! Defines the transformation done to all user-defined compound type definitions.
+//!
+//! Structs and tuples have thier field types recursively tupled, as defined in
+//! [crate::instrument::types].
 
 use crate::instrument::{instrument::InstrumentingVisitor, types};
 
@@ -21,8 +24,7 @@ pub fn transform_struct(_visitor: &mut InstrumentingVisitor, struct_item: &mut r
 
 /// Tuples all tupleable types in every variant of the enum.
 pub fn transform_enum(_visitor: &mut InstrumentingVisitor, enum_item: &mut rustc_ast::Item) {
-    let rustc_ast::ItemKind::Enum(_ident, _, rustc_ast::EnumDef { variants }) =
-        &mut enum_item.kind
+    let rustc_ast::ItemKind::Enum(_ident, _, rustc_ast::EnumDef { variants }) = &mut enum_item.kind
     else {
         return;
     };
@@ -53,7 +55,7 @@ pub fn transform_closure(_visitor: &mut InstrumentingVisitor, closure_expr: &mut
     else {
         panic!(
             "Invoked transform_closure with non-closure expr: {:?}",
-            pprust::expr_to_string(closure_expr)
+            rustc_ast_pretty::pprust::expr_to_string(closure_expr)
         );
     };
 
@@ -64,4 +66,3 @@ pub fn transform_closure(_visitor: &mut InstrumentingVisitor, closure_expr: &mut
         types::recursively_transform_ast_type(ty);
     }
 }
-

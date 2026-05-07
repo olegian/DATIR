@@ -1,6 +1,14 @@
+//! Defines how the [`AnalyzeHirVisitor`] records information about assignment expressions.
+//!
+//! See the top-level comment in [crate::gather::analyze_hir] for more information as to
+//! why this is necessary.
+
 use crate::{common::CanBeTupled, gather::analyze_hir::AnalyzeHirVisitor};
 
 impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
+    /// If the assignment happens to a dereferenced mutable reference that refers to some
+    /// tuplable type, then mark this expression as requiring the assignment to write
+    /// both the value and the tag.
     pub fn observe_assignment(&mut self, expr: &rustc_hir::Expr) {
         let (rustc_hir::ExprKind::Assign(lhs, _, _) | rustc_hir::ExprKind::AssignOp(_, lhs, _)) =
             expr.kind
@@ -17,10 +25,9 @@ impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
             let inner_ty = typeck.expr_ty(inner);
             if let rustc_middle::ty::Ref(_, referent, mutbl) = *inner_ty.kind() {
                 if mutbl.is_mut() && referent.can_be_tupled() {
-                    self.first_pass.observe_assign_through_tagged_ref_mut(
-                        expr.span,
-                        self.tcx.sess.source_map(),
-                    );
+                    self.first_pass
+                        .assign_through_tagged_ref_mut
+                        .mark(expr.span, self.tcx.sess.source_map());
                 }
             }
         }

@@ -29,7 +29,7 @@ fn assign_compound() {
         ))
         // b is captured by value
         .register("a.0", 2)
-        .register("a.1", 3)
+        .register("a.1", 3),
     );
 
     expected.register_site(
@@ -47,7 +47,7 @@ fn assign_compound() {
         ))
         // b is captured by value
         .register("a.a", 2)
-        .register("a.b", 3)
+        .register("a.b", 3),
     );
 
     expected.register_site(
@@ -71,7 +71,7 @@ fn assign_compound() {
         .register("a::StructVariant.a", 4)
         .register("a::StructVariant.b", 5)
         .register("a::TupleVariant.0", 6)
-        .register("a::TupleVariant.1", 7)
+        .register("a::TupleVariant.1", 7),
     );
 
     let executable = Path::new(file!())

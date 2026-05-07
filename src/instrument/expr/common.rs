@@ -1,3 +1,12 @@
+//! Defines helper functions utilized by all other files in [crate::instrument::expr].
+//! 
+//! Namely this includes tupling and untupling operations, turning `expr` into ATI::track(`expr`),
+//! or `Tagged(Id, expr)` into `Tagged(Id, expr).1` to retrieve the expression.
+//! 
+//! Further, this file defines a function to recursively make all bindings `mut` within patterns,
+//! insert a reborrow operation ontop of some expression, and determine whether some condition
+//! expression contains a let-binding within it.
+
 /// Wraps an expression `e` of type T as `ATI::track(e)` of type Tagged<T> in place.
 pub fn tuple(expr: &mut rustc_ast::Expr) {
     let mut ati_track = rustc_ast::Expr::dummy();
@@ -24,19 +33,19 @@ pub fn untuple(expr: &mut rustc_ast::Expr) {
     expr.kind = rustc_ast::ExprKind::Field(Box::new(inner), rustc_span::Ident::from_str("1"));
 }
 
-/// If `expr`'s span was marked by pass 1 as a `&mut T` (T tupleable) — i.e.
-/// post-instrumentation it is a `TaggedRefMut<T>` — rewrite it in place to
+/// If `expr`'s span was marked by pass 1 as a `&mut T` (T tupleable), i.e.
+/// post-instrumentation it is a `TaggedRefMut<T>, rewrite it in place to
 /// `(<expr>).reborrow()` so any consumption (move into a binding, into
 /// emitted args, etc.) doesn't invalidate the original source binding.
-/// `TaggedRefMut` is move-only; reborrow is the equivalent of Rust's
-/// implicit `&mut` reborrow.
+/// `TaggedRefMut` is move-only. 
 pub fn reborrow_if_ref_mut(
     visitor: &crate::instrument::instrument::InstrumentingVisitor,
     expr: &mut rustc_ast::Expr,
 ) {
     if !visitor
         .first_pass
-        .is_ref_mut_to_tupleable(expr.span, visitor.psess.source_map())
+        .ref_mut_to_tupleable
+        .contains(expr.span, visitor.psess.source_map())
     {
         return;
     }
@@ -59,7 +68,10 @@ pub fn pat_force_mut_bindings(pat: &mut rustc_ast::Pat) {
                 pat_force_mut_bindings(sub);
             }
         }
-        PatKind::Tuple(elems) | PatKind::TupleStruct(_, _, elems) | PatKind::Or(elems) | PatKind::Slice(elems) => {
+        PatKind::Tuple(elems)
+        | PatKind::TupleStruct(_, _, elems)
+        | PatKind::Or(elems)
+        | PatKind::Slice(elems) => {
             for p in elems {
                 pat_force_mut_bindings(p);
             }
@@ -69,7 +81,11 @@ pub fn pat_force_mut_bindings(pat: &mut rustc_ast::Pat) {
                 pat_force_mut_bindings(&mut f.pat);
             }
         }
-        PatKind::Box(inner) | PatKind::Deref(inner) | PatKind::Ref(inner, _, _) | PatKind::Paren(inner) | PatKind::Guard(inner, _) => {
+        PatKind::Box(inner)
+        | PatKind::Deref(inner)
+        | PatKind::Ref(inner, _, _)
+        | PatKind::Paren(inner)
+        | PatKind::Guard(inner, _) => {
             pat_force_mut_bindings(inner);
         }
         _ => {}
@@ -81,8 +97,8 @@ pub fn pat_force_mut_bindings(pat: &mut rustc_ast::Pat) {
 /// `let` only appears in if/while cond positions, optionally inside `&&`
 /// chains (let-chains). Such chains must stay structurally intact as
 /// `Binary(And, ..)` so the `Let` keeps a syntactically legal slot, and they
-/// evaluate to raw `bool` rather than `Tagged<bool>` — so callers (binary,
-/// if, while) treat them specially.
+/// evaluate to raw `bool` rather than `Tagged<bool>`, so callers (binary,
+/// if, while) must also treat them specially.
 pub fn contains_let_chain(expr: &rustc_ast::Expr) -> bool {
     match &expr.kind {
         rustc_ast::ExprKind::Let(..) => true,

@@ -37,7 +37,7 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
 
     expected.register_site(
@@ -68,7 +68,7 @@ fn iter_array() {
         .register("return[1]", 1)
         .register("return[2]", 1)
         .register("return[3]", 1)
-        .register("return[4]", 1)
+        .register("return[4]", 1),
     );
 
     expected.register_site(
@@ -94,7 +94,7 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
 
     expected.register_site(
@@ -120,7 +120,7 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
 
     expected.register_site(
@@ -146,7 +146,7 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
 
     expected.register_site(
@@ -172,9 +172,8 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
-
 
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
@@ -199,9 +198,8 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
-
 
     expected.register_site(
         ExpectedSite::new(prefix_with_path_from_root(
@@ -226,7 +224,7 @@ fn iter_array() {
         .register("arr[3]", 1)
         .register("arr[4]", 1)
         .register("val", 1)
-        .register("return", 1)
+        .register("return", 1),
     );
 
     expected.register_site(
@@ -252,11 +250,8 @@ fn iter_array() {
         .register("arr[3]", 4)
         .register("arr[4]", 5)
         .register("val", 1)
-        .register("return", 0)
+        .register("return", 0),
     );
-
-
-
 
     let executable = Path::new(file!()).parent().unwrap().join("array.out");
     delete(&executable);

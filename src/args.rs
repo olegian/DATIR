@@ -1,13 +1,87 @@
+//! Command line argument specification and parsing helper functions.
+//!
+//! Within main, use [`datir_arg_init`] to construct an [`ArgParser`].
+//!
+//! This defines all flags/positional/keyword arguments that can be passed
+//! into DATIR, [`ArgParser::parse_env`] or [`ArgParser::parse_or_exit`] can
+//! then be used to load all arguments, printing usage if -h/--help is
+//! provided and checking for any missing required arguments.
+//!
+//! Use [`ParsedArg::is_present`] or [`ParsedArg::get_value`] to access specific
+//! argument values, which are always represented as simple string slices.
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+/// Specifies the possible command line arguments into DATIR,
+/// alonside any required arguments, short names, help messages, etc.
+pub fn datir_arg_init(program_name: &str) -> ArgParser {
+    let parser = ArgParser::new(
+        program_name,
+        "DATIR: dynamic abstract type inference for Rust",
+    )
+    .arg(ArgSpec::positional(
+        "file",
+        "FILE",
+        "Path to root source file to instrument",
+    ))
+    .arg(
+        ArgSpec::keyword(
+            "output",
+            "Location of produced executable with added instrumentation",
+        )
+        .short("-o")
+        .long("--output")
+        .value_name("PATH"),
+    )
+    .arg(
+        ArgSpec::keyword(
+            "release",
+            "Run in release mode, skipping debug logging, also creating .ati files \
+             whenever the output binary is executed in the directory pointed to by ATI_OUT_DIR_PATH",
+        )
+        .long("--release")
+        .short("-r")
+        .value_name("ATI_OUT_DIR_PATH")
+    )
+    .arg(
+        ArgSpec::keyword(
+            "decls-path",
+            "Rather than regenerating a decls file, parse in an existing one specified by PATH.",
+        )
+        .short("-d")
+        .long("--decls-path")
+        .value_name("PATH"),
+    )
+    .arg(
+        ArgSpec::keyword(
+            "rec-depth",
+            "The recursive depth with which to expand all variables at each program point. \
+             Defaults to 3. Only useful if --decls-path is left unspecified ",
+        )
+        .short("-rd")
+        .long("--rec-depth")
+        .value_name("INT_DEPTH")
+        .default_value("3"),
+    )
+    .arg(ArgSpec::flag(
+        "test",
+        "--test",
+        "Run in test mode, skipping debug logging, and using regular print ATI output",
+    ));
+
+    parser
+}
+
+/// Represents the different kinds of command line arguments
+/// that can be passed in when invoking the binary.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ArgKind {
-    /// boolean flag, mostly for specifying --test
+    /// boolean flag, e.g. "--test"
     Flag,
-    /// keyword arg, e.g. -o hello --> {"o": "hello"}
+    /// keyword arg, e.g. "-o hello" --> {"o": "hello"}
     Keyword,
-    /// regular arg, DATIR only supports a single one
+    /// regular, positional arg
     Positional,
 }
 
@@ -93,6 +167,8 @@ impl ArgSpec {
         self
     }
 
+    /// Specifies a default value for this argument, used if this
+    /// argument is not provided.
     pub fn default_value(mut self, v: &'static str) -> Self {
         self.default_value = Some(v);
         self
@@ -115,6 +191,7 @@ pub enum ArgError {
     DuplicatePositional { first: String, second: String },
 }
 
+impl std::error::Error for ArgError {}
 impl fmt::Display for ArgError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -132,8 +209,10 @@ impl fmt::Display for ArgError {
     }
 }
 
-impl std::error::Error for ArgError {}
-
+/// Collects all values that were actually provided for each
+/// command line argument in some invocation. Each argument
+/// is accessible by name, using [`ParsedArgs::is_present`] or
+/// [`ParsedArgs::get_value`].
 #[derive(Debug, Default)]
 pub struct ParsedArgs {
     values: HashMap<&'static str, String>,
@@ -154,12 +233,16 @@ impl ParsedArgs {
 
 /// Declarative argument parser.
 pub struct ArgParser {
+    /// Name of the program (for usage message)
     program: String,
+    /// Program description (for usage message)
     about: &'static str,
+    /// Specifications of all command line arguments accepted by this program.
     specs: Vec<ArgSpec>,
 }
 
 impl ArgParser {
+    /// Constructs a new ArgParser.
     pub fn new(program: impl Into<String>, about: &'static str) -> Self {
         Self {
             program: program.into(),
@@ -249,7 +332,9 @@ impl ArgParser {
 
         // Add in uninitialized default values
         for spec in &self.specs {
-            if !parsed.is_present(spec.name) && let Some(default) = spec.default_value {
+            if !parsed.is_present(spec.name)
+                && let Some(default) = spec.default_value
+            {
                 parsed.values.insert(spec.name, default.to_string());
             }
         }
@@ -316,9 +401,9 @@ impl ArgParser {
                 let ph = s.value_name.unwrap_or("VALUE");
                 left.push_str(&format!(" <{ph}>"));
             }
-            out.push_str(&format!("  {left:<28} {}\n", s.help));
+            out.push_str(&format!("  {left:<32} {}\n", s.help));
         }
-        out.push_str(&format!("  {:<28} {}\n", "-h, --help", "Print this help"));
+        out.push_str(&format!("  {:<32} {}\n", "-h, --help", "Print this help"));
 
         out
     }

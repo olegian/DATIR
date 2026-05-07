@@ -1,3 +1,8 @@
+//! Defines how the [`AnalyzeHirVisitor`] records information about index expressions.
+//!
+//! See the top-level comment in [crate::gather::analyze_hir] for more information as to
+//! why this is necessary.
+
 use crate::gather::analyze_hir::AnalyzeHirVisitor;
 
 /// Lang items for every range struct that is valid as an indexing argument and
@@ -16,6 +21,7 @@ const RANGE_LANG_ITEMS: &[rustc_hir::LangItem] = &[
     rustc_hir::LangItem::RangeToInclusiveCopy,
 ];
 
+/// Returns true if this `did` refers to some Range variant.
 fn is_range_lang_item<'tcx>(
     tcx: rustc_middle::ty::TyCtxt<'tcx>,
     did: rustc_span::def_id::DefId,
@@ -26,6 +32,10 @@ fn is_range_lang_item<'tcx>(
 }
 
 impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
+    /// If the index expression uses a range as the index into some collection,
+    /// then record this expression as requiring a special `.subslice` call post-transformation
+    /// which will construct an equivalent non-instrumented range object before applying the index
+    /// operation to the collection.
     pub fn observe_range(&mut self, expr: &rustc_hir::Expr) {
         let rustc_hir::ExprKind::Index(_, idx, _) = expr.kind else {
             panic!("Invoked observe_range with non-range expr: {:?}", expr);
@@ -40,7 +50,8 @@ impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
             .unwrap_or(false)
         {
             self.first_pass
-                .observe_index_by_range(expr.span, self.tcx.sess.source_map());
+                .index_by_range
+                .mark(expr.span, self.tcx.sess.source_map());
         }
     }
 }
