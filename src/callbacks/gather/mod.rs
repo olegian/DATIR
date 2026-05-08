@@ -3,8 +3,8 @@
 //! Before we can perform the required AST mutation, we need to gather
 //! some type information about the original source code. This is done by
 //! invoking the compiler and passing in the [`GatherAtiInfo`] callback struct
-//! defined here. See [`GatherAtiInfo::after_expansion`] for more specific information
-//! on what information is collected.
+//! defined here. See `after_expansion` callback defined on the [`GatherAtiInfo`] struct for 
+//! more specific information on what facts are collected.
 
 mod analyze_hir;
 pub mod first_pass_info;
@@ -32,7 +32,7 @@ pub struct GatherAtiInfo {
 }
 
 impl GatherAtiInfo {
-    /// Constructor
+    /// Constructor.
     pub fn new(config: Arc<DatirConfig>) -> Self {
         Self {
             first_pass: Default::default(),
@@ -41,14 +41,17 @@ impl GatherAtiInfo {
     }
 
     /// Consumes the callback struct, returning all gathered info.
+    /// 
     /// Must be called after the first compilation is performed.
     pub fn into_first_pass_info(self) -> FirstPassInfo {
         self.first_pass
     }
 
+    /// Registers that a function requires instrumentation.
+    /// 
     /// For the given function identified by `local_def_id`, get the `base_ppt_name`
-    /// which corresponds to it (i.e. everything before :::{ENTER|EXIT|EXITNN} in
-    /// the decls file). Then validate:
+    /// which corresponds to it (i.e. everything before the `:::{ENTER|EXIT|EXITNN}` in
+    /// the associated `.decls` file). Then validates:
     /// 1. the loaded decls file contains the matching ENTER and EXIT program points,
     /// 2. every formal parameter has a `VariableDecl` on both ppts,
     /// 3. any non-unit return value has a `return` `VariableDecl` on the EXIT ppt.
@@ -142,11 +145,12 @@ impl GatherAtiInfo {
             .record(mod_path, ns, ident, local_def_id.to_def_id(), base_ppt_name);
     }
 
-    /// Finds all functions/methods that are going to be instrumented, in the crate
-    /// currently being compiled. Validate each function signature against the previously
-    /// loaded DeclsFile within the DATIR configuration.
+    /// Finds and records all functions/methods that are going to be instrumented.
+    /// 
+    /// Each function signature is validated against the previously loaded `DeclsFile` stored 
+    /// within the DATIR configuration.
     ///
-    /// Store all functions-to-be-instrumented in FirstPassInfo.
+    /// Stores all functions-to-be-instrumented in FirstPassInfo.
     fn find_instrumented_functions<'tcx>(&mut self, tcx: rustc_middle::ty::TyCtxt<'tcx>) {
         for local_def_id in tcx.hir_body_owners() {
             let node = tcx.hir_node_by_def_id(local_def_id);
@@ -265,6 +269,7 @@ impl rustc_driver::Callbacks for GatherAtiInfo {
         Compilation::Continue
     }
 
+    /// No-op. The rustc configuration stops codegen from running after this callback is invoked.
     fn after_analysis<'tcx>(
         &mut self,
         _compiler: &interface::Compiler,
@@ -274,7 +279,7 @@ impl rustc_driver::Callbacks for GatherAtiInfo {
     }
 }
 
-/// Module path for `ldid`s enclosing module, joined by ::. For the crate root
+/// Module path for `ldid`s enclosing module, joined by `::`. For the crate root
 /// this returns an empty string.
 ///
 /// # Examples:
@@ -290,7 +295,7 @@ impl rustc_driver::Callbacks for GatherAtiInfo {
 ///
 /// Then, `mod_path_of(tcx, 1)` returns `"dep::foo"`, and `mod_path_of(tcx, 2)`
 /// returns `"dep::submod::bar"`. If the file was instead the `main.rs` or
-/// `lib.rs` file, then the first `dep::` would be excluded.
+/// `lib.rs` file, then the first `dep::` segment would be excluded.
 fn mod_path_of<'tcx>(tcx: TyCtxt<'tcx>, ldid: LocalDefId) -> ModPath {
     let parent_mod = tcx.parent_module_from_def_id(ldid);
     if parent_mod.to_local_def_id() == CRATE_DEF_ID {

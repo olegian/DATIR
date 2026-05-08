@@ -1,26 +1,30 @@
 //! Determines information regarding how to transform a file loaded by
-//! the [`TransformingFileLoader`].
+//! the [super::TransformingFileLoader].
 //!
-//! Every file used within a crate being compiled, is going to be loaded by the transforming
+//! Every file used within a crate is going to be loaded by the transforming
 //! file loader, but not all files require instrumentation. [`FileContents`] captures the
 //! contents of a loaded file, along with information regarding what file was loaded and
-//! whether or not it requires instrumentation applied to it.
+//! whether or not it requires the transformation to be applied to it.
 
 /// Represents the contents of a file being loaded, alongside metadata about
 /// what kind of file it is and the file's Rust module path.
 #[derive(Debug)]
 pub struct FileContents {
+    /// The contents of the file.
     pub source: String,
+    /// The type of file, with respect to whether or not it requires instrumentation.
     pub file_type: FileType,
-
     /// The Rust module path for this file, derived from the filesystem path.
     /// Empty string for the crate root (`main.rs` / `lib.rs`).
     /// For other files, segments are joined with `::` (e.g., `"dep"`, `"foo::bar"`).
     pub module_path: String,
 }
 
+
+/// Encodes whether or not a file requires instrumentation.
+/// 
 /// All files loaded by DATIR are either root files (`main.rs` or `lib.rs`` ), dependancy files
-/// (imported by some other file, but within the currently compiled crate), or untracked file
+/// (imported by some other file, but within the currently compiled crate), or untracked files
 /// (imported, but external to the currently compiled crate).
 #[derive(Debug)]
 pub enum FileType {
@@ -33,9 +37,12 @@ pub enum FileType {
 }
 
 impl FileContents {
-    /// Constructs a [`FileContents`] with appropriate metadata, given the source contents
-    /// (usually read in from a standard rustc file loader), a path to the file within the
-    /// filesystem, and a root directory (the directory where /main.rs or /lib.rs is defined).
+    /// Constructs a [`FileContents`] with appropriate metadata.
+    /// 
+    /// Given the source contents (usually read in from a standard rustc file loader), a path to 
+    /// the file within the filesystem, and a root directory (the directory where `main.rs` or 
+    /// `lib.rs` is defined), the returned [`FileContents`] will capture whether or not this
+    /// file requires instrumentation.
     pub fn new(source: String, path: &std::path::Path, root_dir: Option<&std::path::Path>) -> Self {
         let path_str = path.to_str().unwrap();
 

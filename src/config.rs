@@ -2,9 +2,9 @@
 //! artifacts and debug information), alongside the .decls file which describes the crate
 //! being instrumented.
 //!
-//! [`DatirConfig`] can be constructed without a specific constructor invocation is desired,
+//! [`DatirConfig`] can be constructed manually if a special configuration is desired,
 //! but most likely one the following modes is sufficient:
-//! - [`DatirConfig::debug`]: Prints all available debug information to a ./logs/ directory.
+//! - [`DatirConfig::debug`]: Prints all available debug information to a `./logs/` directory.
 //!   Instrumented binaries do not write new files, but simply print comparability information
 //!   to stdout.
 //! - [`DatirConfig::test`]: Utilized for DATIR's unit tests to prevent debug logging.
@@ -61,7 +61,7 @@ impl DatirConfig {
         }
     }
 
-    /// configuration intended to be used for unit test invocations.
+    /// Configuration intended to be used for unit test invocations.
     pub fn test(decls_file: decls_gen::DeclsFile) -> Self {
         Self {
             log_dir: None,
@@ -75,7 +75,7 @@ impl DatirConfig {
         }
     }
 
-    /// Simple configuration intended to be used for consumer use
+    /// Simple configuration intended to be used for consumer use.
     pub fn release(decls_file: decls_gen::DeclsFile, ati_output_dir: std::path::PathBuf) -> Self {
         Self {
             log_dir: None,
@@ -89,9 +89,11 @@ impl DatirConfig {
         }
     }
 
-    /// Logs the message, giving it a prefix to make it easier to identify.
-    /// If self.log_dir is set, then the prefix becomes the name of the file which
-    /// will be appended to.
+    /// Logs a message.
+    /// 
+    /// The message is given a prefix to make it easier to grep / otherwise find.
+    /// If `self.log_dir` is set, then the prefix becomes the name of the file which
+    /// the message will be appended to. Otherwise, prints to stdout.
     pub fn log(&self, prefix: &'static str, message: String) {
         match &self.log_dir {
             Some(dir) => {

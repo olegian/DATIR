@@ -1,30 +1,31 @@
 //! Defines a visitor which walks the HIR, and gathers expression-level information used by the
 //! second instrument compilation.
 //!
-//! More specifically, this visitor collects (and adds to [`FirstPassInfo`] code locations where:
+//! More specifically, this visitor collects (and adds to [`FirstPassInfo`]) code locations where:
 //! - A call to an uninstrumented function is made. These are places where any tupled
 //!   values passed in as input to this function need to be untupled, and a return value
 //!   potentially needs to be tupled.
 //!
 //! - A reference is created to some tuplable value (e.g. `let x = &mut 10`). These are
-//!   places where a [`TaggedRef<T>`] or [`TaggedRefMut<T>`] needs to be constructed
-//!   from a [`Tagged<T>`]. Note that for non-tuplable types (like compound types),
+//!   places where a `TaggedRef<T>` or `TaggedRefMut<T>` needs to be constructed
+//!   from a `Tagged<T>`. Note that for non-tupleable types (like compound types),
 //!   we continue to use a regular reference, requiring no AST transformation.
 //!
 //! - A reference to tuplable value is dereferenced (e.g. `*x` with above `x`). The
-//!   runtime library defines [`TaggedRef::deref`] to a type `T`, to allow calling
+//!   runtime library defines `TaggedRef::deref`, which results in a type `T`, to allow calling
 //!   methods defined on `T` on `TaggedRef<T>`. However, these places, where an explicit
-//!   derefernce is used, need to convert the [`TaggedRef<T>`] to a `[Tagged<T>]` instead,
+//!   dereference is used, need to convert the `TaggedRef<T>` to a `Tagged<T>` instead,
 //!   so that the tag is not stripped off. Record these locations, so that we can
-//!   reconstruct the `Tagged<T>` where necessary.
+//!   reconstruct the `Tagged<T>` during the Instrument compilation, where necessary.
 //!
 //! - A mutable reference to a tuplable value is used as a place value in an assignment
 //!   (e.g. `*x = 20`, with above `x`). Pre-transformation, this assignment was writing
 //!   just a single value to a place. Once transformed, this assignment has to write both
-//!   the value and the value's tag, requiring special casing.
+//!   the value and the value's tag, requiring special casing. The instrument pass will rewrite
+//!   these assignments to use something like `x.assign(Tagged(0, 20))` instead.
 //!
-//! - A range is used as an index into some collection (using the SliceIndex operator).
-//!   Ranges require special casing as the SliceIndex trait is sealed, and cannot be
+//! - A range is used as an index into some collection (using the `SliceIndex` operator).
+//!   Ranges require special casing as the `SliceIndex` trait is sealed, and cannot be
 //!   implemented outside of rustc. When used as an index, they require a slightly
 //!   different operation to be emitted to push the range index operation down into the
 //!   `TaggedRef<[T]>` or `Tagged<[T; N]>` it acts on. See
@@ -43,24 +44,29 @@ mod index;
 mod references;
 
 /// Visitor that finds code spans of interest (listed at the top of this file).
-/// Updates self.first_pass to include this information.
+/// Updates `self.first_pass` to include this information.
 pub struct AnalyzeHirVisitor<'tcx, 'a> {
     pub tcx: rustc_middle::ty::TyCtxt<'tcx>,
+    /// Collection of all gathered information.
     pub first_pass: &'a mut FirstPassInfo,
 }
 
 impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 'a> {
+    /// Setup rustc's `NestedFilter` to perform a deep traversal.
     type NestedFilter = rustc_middle::hir::nested_filter::All;
 
-    /// Combined with above NestedFilter, defining this method defines how the visitor
-    /// is going to traverse the tree. This configuration will have
-    /// this visitor visit all nested expressions, as in we are doing
+    /// Combined with above `NestedFilter`, defining this method defines how the visitor
+    /// is going to traverse the HIR tree. 
+    /// 
+    /// This configuration will have this visitor visit all nested expressions, as in we are doing
     /// a "deep" traversal, visiting every single expression as opposed
     /// to doing a "shallow" traversal, visiting only the top-level exprs.
     fn maybe_tcx(&mut self) -> Self::MaybeTyCtxt {
         self.tcx
     }
 
+    /// Do not traverse down any Anon Const expressions.
+    /// 
     /// Anon consts (array lengths, const generics, inline consts) live in
     /// their own owner with no typeck results, and have no values for us to
     /// instrument. Skip the entire subtree when encountered.
@@ -78,7 +84,7 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
         // Regardless of the expr kind, record any expression whose adjusted type is
         // `&mut T` with a tupleable `T`. Pass 2 must explicitly reborrow such operands
         // before consuming them, as &mut T does not transfer ownership when moved, but a
-        // TaggedRefMut<T> = (&mut Id, &mut T) will. Reborrowing allows the [`TaggedRefMut`]
+        // TaggedRefMut<T> = (&mut Id, &mut T) will. Reborrowing allows the `TaggedRefMut`
         // to act in a semantically identical way to the uninstrumented `&mut T`.
         // See [`FirstPassInfo::ref_mut_to_tupleable_locs`].
         let typeck = self.tcx.typeck(ldid);

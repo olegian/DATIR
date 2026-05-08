@@ -33,9 +33,9 @@ fn is_range_lang_item<'tcx>(
 
 impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
     /// If the index expression uses a range as the index into some collection,
-    /// then record this expression as requiring a special `.subslice` call post-transformation
-    /// which will construct an equivalent non-instrumented range object before applying the index
-    /// operation to the collection.
+    /// this function records the input expression as requiring a special runtime library 
+    /// `.subslice()` call  post-transformation which will construct an equivalent non-instrumented
+    /// range object before applying the index operation to the collection.
     pub fn observe_range(&mut self, expr: &rustc_hir::Expr) {
         let rustc_hir::ExprKind::Index(_, idx, _) = expr.kind else {
             panic!("Invoked observe_range with non-range expr: {:?}", expr);

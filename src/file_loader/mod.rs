@@ -1,37 +1,41 @@
 //! Defines a rustc-compatible file loader, which uniformly applies a set of AST transformations
 //! to every file being compiled.
 //!
-//! To utilize the [`TransformingFileLoader`], construct it with a collection of [`Passes`] to
+//! To utilize the [`TransformingFileLoader`], construct it with a collection of [`Passes`]
 //! which operate over the AST of each loaded file, then assign it to `config.file_loader` within
 //! the `config` callback. See [crate::callbacks::instrument] for an example.
 //!
 //! The `after_crate_root_parsing` callback is the only one provided by rustc within which
-//! AST modification is usually possible. This callback provides a mutable reference to the
-//! `rustc_ast::Crate`, however, this crate only captures the crate root, in other words, main.rs
-//! or lib.rs. Therefore, any modification defined there will only be represented in that file.
+//! AST modification is possible. This callback provides a mutable reference to the
+//! `rustc_ast::Crate`, however, this crate only captures the crate root, in other words, `main.rs`
+//! or `lib.rs`. Therefore, any modification defined there will only be represented in that file.
 //! The later callbacks, `after_expansion` and `after_analysis` get invoked when the AST has
-//! already been lowered to an HIR, which makes crate immutable.
+//! already been lowered to an HIR, which makes the crate immutable.
 //!
-//! The [`TransformingFileLoader`] avoids this problem, allowing for AST level modification of all
+//! The [`TransformingFileLoader`] avoids this problem, allowing for AST-level modification of all
 //! compiled files, by constructing a "preliminary AST" before handing off any file rustc.
 //! This means the usual compilation pipeline of:
-//!     1. File Loading
-//!     2. Source to AST
-//!     3. AST to HIR
-//!     4. HIR to THIR
-//!     5. ...
+//! ```
+//! 1. File Loading
+//! 2. Source to AST
+//! 3. AST to HIR
+//! 4. HIR to THIR
+//! 5. ...
+//! ```
 //! instead becomes:
-//!     1. File Loading --------------------
-//!     2. Source to AST           |  done by [`TransformingFileLoader`]
-//!     3. AST Transformation      |
-//!     4. AST to Source String -----------
-//!     5. Source to AST           |  done by rustc
-//!     6. AST to HIR              |
-//!     7. HIR to THIR             |
-//!     8. ...
+//! ```
+//! 1. File Loading --------------------
+//! 2. Source to AST           |  done by [`TransformingFileLoader`]
+//! 3. AST Transformation      |
+//! 4. AST to Source String -----------
+//! 5. Source to AST           |  done by rustc
+//! 6. AST to HIR              |
+//! 7. HIR to THIR             |
+//! 8. ...
+//! ```
 //!
-//! This incurs a slight runtime cost in requiring to construct another AST, but allows
-//! for instrumentation of non-root files.
+//! This incurs a slight runtime cost in requiring the pipeline to construct another AST, but allows
+//! for instrumentation of non-root files utilizing standard rustc `Visitor`/`MutVisitor` patterns.
 
 mod files;
 mod transforming_passes;
@@ -41,6 +45,8 @@ use crate::config::DatirConfig;
 use files::{FileContents, FileType};
 pub use transforming_passes::Passes;
 
+/// File loader responsible for loading files from disk and applying a transformation to them.
+/// 
 /// This FileLoader constructs an early intermediate AST of any file that is loaded
 /// through it. This intermediate AST can be modified using the regular Visitor
 /// pattern, before being written back into a string format and actually handed
@@ -52,7 +58,7 @@ pub struct TransformingFileLoader {
     passes: Passes,
     /// DATIR configuration which governs the entire instrumentation process.
     config: std::sync::Arc<DatirConfig>,
-    /// Parent directory of the crate root file (main.rs / lib.rs).
+    /// Parent directory of the crate root file (`main.rs` / `lib.rs`).
     /// Discovered on the first Root file read and used to compute
     /// relative module paths for dep files.
     root_dir: std::sync::OnceLock<std::path::PathBuf>,
@@ -102,6 +108,8 @@ impl TransformingFileLoader {
         }
     }
 
+    /// Runs all registered `Passes` over a loaded file.
+    /// 
     /// Given a loaded source file (represented as a string, within `file`), parses it into
     /// an AST, executes each of the AST-transforming passes over it, then converts the
     /// modified AST back into a source string representation.
@@ -135,10 +143,11 @@ impl TransformingFileLoader {
         output
     }
 
-    /// Reads in a file at `path` directly, constructing a FileContents
-    /// which determines the file type and module path from the path.
+    /// Reads in a file at `path` directly, constructing a `FileContents`.
+    /// 
+    /// This struct determines the file type and module path from the file path.
     /// When a Root file is encountered, its parent directory is saved
-    /// for use in computing relative module paths for dep files.
+    /// for use in computing relative module paths for dependancy files.
     fn load_file_contents(&self, path: &std::path::Path) -> std::io::Result<FileContents> {
         let source = rustc_span::source_map::FileLoader::read_file(&self.inner, path)?;
         let file = FileContents::new(source, path, self.root_dir.get().map(|p| p.as_path()));
@@ -154,9 +163,10 @@ impl TransformingFileLoader {
     }
 }
 
-/// Converts a Crate AST to a standard string representation, equivalent
-/// to that of a regular source file. After this call, the regular rustc
-/// parser will be ready to run again consuming the output string.
+/// Converts a Crate AST to a standard source string representation.
+/// 
+/// The output string is equivalent to that of a regular source file. After this call, 
+/// the regular rustc parser will be ready to run again, to consume this output string.
 fn ast_to_source(krate: &rustc_ast::Crate) -> String {
     let mut output = String::new();
 
