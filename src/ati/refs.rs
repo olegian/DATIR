@@ -93,16 +93,19 @@ impl<'a, T: ?Sized> TaggedRefMut<'a, T> {
     ) -> TaggedRefMut<'a, U> {
         TaggedRefMut(self.0, f(self.1))
     }
-
-    // /// Manual analogue of Rust's implicit `&mut` reborrow. [TaggedRefMut] is move-only (must
-    // /// not be `Copy` or `Clone`, to preserve unique-borrow semantics), so every value-position
-    // /// use of a [TaggedRefMut] binding other than the last needs an explicit `.reborrow()`
-    // /// call where the source code would have implicitly reborrowed.
-    // pub fn reborrow(&mut self) -> TaggedRefMut<'_, T> {
-    //     TaggedRefMut(self.0, &mut *self.1)
-    // }
 }
 
+/// This trait allows for explicit reborrowing of mutable references.
+/// 
+/// This manual analogue of Rust's implicit `&mut` reborrow, allows [TaggedRefMut] to remain
+/// move-only (as it must not be `Copy` or `Clone`, to preserve unique-borrow semantics). 
+/// Every value-position use of a [TaggedRefMut] binding other than the last needs an 
+/// explicit `.reborrow()` call where the source code would have implicitly reborrowed a `&mut T`.
+/// 
+/// Defined as a trait so that it can be implemented on &mut Tagged<T>. This means
+/// if a mutable reference to a Tagged<T> is ever constructed, we can simply reborrow
+/// it to construct the correctly transformed TaggedRefMut form. This is especially handy when
+/// a `ref mut` pattern binding is used.
 trait Reborrow<'a, T: ?Sized> {
     fn reborrow(&'a mut self) -> TaggedRefMut<'a, T>;
 }
@@ -110,7 +113,6 @@ trait Reborrow<'a, T: ?Sized> {
 impl<'a, T> Reborrow<'a, T> for Tagged<T> {
     fn reborrow(&'a mut self) -> TaggedRefMut<'a, T> {
         self.as_tagged_ref_mut()
-        // TaggedRefMut(&mut self.0, &mut self.1)
     }
 }
 
