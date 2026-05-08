@@ -47,7 +47,7 @@ pub fn generate_shims(
     );
 }
 
-/// Recursive worker for generate_shims. 
+/// Recursive worker for `generate_shims`. 
 /// 
 /// Walks one module's items at mod_path, recursing into ItemKind::Mod with mod_path::sub_name.
 fn generate_shims_in_mod(
