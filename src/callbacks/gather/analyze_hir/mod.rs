@@ -31,6 +31,12 @@
 //!   `TaggedRef<[T]>` or `Tagged<[T; N]>` it acts on. See
 //!   `crate::callbacks::instrument::expr::addr_of` for more information.
 //!   Whenever the standard library is instrumented, it's possible this could be removed.
+//! 
+//! - A match statement, matches on a tagged type (meaning it original was either a tuplable 
+//!   primitive, or a reference to one). Because transformation will change the type of this target
+//!   to be a `Tagged<T>`, `TaggedRef<T>`, or `TaggedRefMut<T>`, we need to untuple the target
+//!   to allow all existing arms to pattern-match on the underlying `T`. Compound types do not 
+//!   require this treatment, as their shape is unchanged.
 //!
 //! As of 3/29/26, we are choosing to ignore uninstrumented libraries, meaning that
 //! the first bullet is really an unnecessary step. The code is still left, as a proof-of-concept.
@@ -141,6 +147,12 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
                 self.observe_range(expr);
             }
 
+            // Match statements can pattern match on either atomics or compound types.
+            // Compound types work out of the box post transformation, however atomics
+            // will have thier type changed from a `T` to a `Tagged<T>`, and matching on a 
+            // `Tagged<T>` is semantically different from `T`. Therefore, we find all places
+            // where a tupled primitive is matched on, to untuple it within the second pass,
+            // to just match on the underlying `T`.
             rustc_hir::ExprKind::Match(..) => {
                 self.observe_match(expr);
             }

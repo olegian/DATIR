@@ -81,5 +81,8 @@ pub struct FirstPassInfo {
     /// operand position.
     pub ref_mut_to_tupleable: SpanFacts<()>,
 
+    /// Spans of match target expressions which are tagged types. These types 
+    /// require untupling, so that the patterns within each arm of the statement
+    /// can actually match on the target.
     pub match_on_tagged: SpanFacts<()>,
 }

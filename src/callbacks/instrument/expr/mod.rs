@@ -33,6 +33,8 @@
 //!   after performing any merges required by the evaluation of the boolean itself. This requires
 //!   knowing if the condition has a let-pattern binding within it, via 
 //!   [common::contains_let_chain].
+//! - Match statements have the match-target untupled, if the match is on a `Tagged`, `TaggedRef`,
+//!   or `TaggedRefMut`. Otherwise, they are untouched.
 
 use crate::callbacks::instrument::{instrument_visitor::InstrumentingVisitor, item::data_types};
 

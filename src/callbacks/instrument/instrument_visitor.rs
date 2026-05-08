@@ -180,6 +180,13 @@ impl<'a> rustc_ast::mut_visit::MutVisitor for InstrumentingVisitor<'a> {
     /// like lengths of arrays.
     fn visit_anon_const(&mut self, _node: &mut rustc_ast::AnonConst) {}
 
+    /// Defining this stops us from modifying any patterns that are matched upon.
+    /// 
+    /// Patterns do not require any instrumentation, as they are used to check the shape
+    /// of some other target expression. The target expression is instrumented in a way 
+    /// that allows all existing patterns to still function on any transformed type.
+    fn visit_pat(&mut self, _node: &mut rustc_ast::Pat) { }
+
     /// Transform `let x: ty` statements, into `let x: Tag(ty)`.
     fn visit_local(&mut self, local: &mut rustc_ast::Local) {
         if let Some(ty) = &mut local.ty {
@@ -198,8 +205,6 @@ impl<'a> rustc_ast::mut_visit::MutVisitor for InstrumentingVisitor<'a> {
     fn visit_item(&mut self, item: &mut rustc_ast::Item) {
         item::transform_item(self, item)
     }
-
-    fn visit_pat(&mut self,node: &mut rustc_ast::Pat) { }
 
     /// After transforming all expressions, iterate through all statements and
     /// hoist any necessary method calls.

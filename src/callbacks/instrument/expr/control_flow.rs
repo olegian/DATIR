@@ -46,8 +46,11 @@ pub fn transform_for(_visitor: &mut InstrumentingVisitor, for_expr: &mut rustc_a
 
 pub fn transform_loop(_visitor: &mut InstrumentingVisitor, _loop_expr: &mut rustc_ast::Expr) {}
 
+/// If the first pass identified this match as requiring the target to be untupled,
+/// this function does so. This makes the match on a tagged type instead match on the underlying
+/// `T`, keeping the match's arms valid patterns.
 pub fn transform_match(visitor: &mut InstrumentingVisitor, match_expr: &mut rustc_ast::Expr) {
-    let rustc_ast::ExprKind::Match(target, arms, kind) = &mut match_expr.kind else {
+    let rustc_ast::ExprKind::Match(target, _arms, _kind) = &mut match_expr.kind else {
         return;
     };
 
