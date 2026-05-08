@@ -1,11 +1,11 @@
-//! Implements the runtime library's SiteBind trait for user-defined compound types.
+//! Implements the runtime library's `SiteBind` trait for user-defined compound types.
 //!
 //! All values (of both atomic and compound types), must be able to be "bound" to sites. This
 //! ultimately just means recording the existing Id associated with some value that is stored
-//! within some variable. The SiteBind trait (defined in `/src/ati/site_bind.rs`) governs this
-//! behavior. Following instrumentation, DATIR generates SiteBind implementations for all
-//! user-defined compound types, so that they recursively bind any tagged fields stored within
-//! them.
+//! within some variable, at a particular site. The SiteBind trait 
+//! (defined in `/src/ati/site_bind.rs`) governs this behavior. Following instrumentation, DATIR 
+//! generates SiteBind implementations for all user-defined compound types, so that they 
+//! recursively bind any tagged fields stored within them.
 //!
 //! To see an example of how this is actually used by shim functions, look at
 //! [crate::callbacks::codegen::function].
@@ -17,8 +17,9 @@ use crate::{
     callbacks::parsing,
 };
 
-/// Implements the BindToSite trait (defined in the runtime library) on a
-/// user-defined struct. The generated impl recursively binds each field of
+/// Implements the BindToSite trait on a user-defined struct. 
+/// 
+/// The generated impl recursively binds each field of
 /// the struct against the passed-in site. Stub functions rely on this to
 /// add all relevant values to sites.
 ///
@@ -68,9 +69,10 @@ pub fn generate_struct_impls(
     }
 }
 
-/// Implements the BindToSite trait on a user-defined enum. The generated
-/// impl matches on the enum and recursively binds each variant's payload
-/// against the passed-in site. See `generate_struct_shim` for context.
+/// Implements the BindToSite trait on a user-defined enum.
+/// 
+/// The generated impl matches on the enum and recursively binds each variant's payload
+/// against the passed-in site. See [`generate_struct_impls`] for more information.
 pub fn generate_enum_impls(
     psess: &rustc_session::parse::ParseSess,
     enum_name: &str,
