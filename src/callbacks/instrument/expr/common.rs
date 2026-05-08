@@ -40,7 +40,7 @@ pub fn untuple(expr: &mut rustc_ast::Expr) {
 /// treat all operands the same way.
 ///
 /// - `Mutability::Mut`: emit `(expr).reborrow()` nets a `TaggedRefMut<T>`.
-/// - `Mutability::Not`: emit `(expr).share()` → `TaggedRef<T>`. 
+/// - `Mutability::Not`: emit `(expr).share()` nets a `TaggedRef<T>`. 
 pub fn normalize_tagged_ref(
     visitor: &crate::callbacks::instrument::instrument_visitor::InstrumentingVisitor,
     expr: &mut rustc_ast::Expr,

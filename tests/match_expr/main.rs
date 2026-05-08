@@ -127,7 +127,7 @@ fn destructure_to_value(x: &MyEnum, y: usize) -> usize {
         MyEnum::V1 => y,
         MyEnum::V2(10) => y,
         // idea is to turn the above into this:
-        // MyEnum::V2(x) if *x == 10 => { y },
+        // MyEnum::V2(x) if matches!(x, 10) => { y },
         MyEnum::V2(x) => x + y,
         MyEnum::V3(my_struct) => my_struct.x + y,
         MyEnum::V4(items) => items.len() + y,
