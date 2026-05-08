@@ -97,9 +97,9 @@ impl_tagged_total_cmp!('a, T;   TaggedRefMut<'a, T>);
 
 /// Arithmetic-style operators (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`) and their assigning
 /// counterparts. The result id is the union of the two operand ids in the value union-find,
-/// and the wrapped value is computed by delegating to `T`'s own operator. Covers the four
-/// owned/borrowed combinations (`Tagged op Tagged`, `Tagged op TaggedRef`, and the opposite
-/// pairs) plus the two assigning variants.
+/// and the wrapped value is computed by delegating to `T`'s own operator. Covers all
+/// owned/borrowed combinations of `Tagged` and `TaggedRef` on either side, plus the two
+/// assigning variants.
 macro_rules! impl_tagged_arithmetic_op {
     (
         $trait:ident,
@@ -114,6 +114,48 @@ macro_rules! impl_tagged_arithmetic_op {
         {
             type Output = Tagged<T>;
             fn $method(self, rhs: Self) -> Self::Output {
+                let merged = ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(&self.0, &rhs.0);
+                Tagged(merged, self.1 $op rhs.1)
+            }
+        }
+
+        impl<T: Copy> std::ops::$trait<&Tagged<T>> for Tagged<T>
+        where
+            T: std::ops::$trait<Output = T>,
+        {
+            type Output = Tagged<T>;
+            fn $method(self, rhs: &Tagged<T>) -> Self::Output {
+                let merged = ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(&self.0, &rhs.0);
+                Tagged(merged, self.1 $op rhs.1)
+            }
+        }
+
+        impl<T: Copy> std::ops::$trait<Tagged<T>> for &Tagged<T>
+        where
+            T: std::ops::$trait<Output = T>,
+        {
+            type Output = Tagged<T>;
+            fn $method(self, rhs: Tagged<T>) -> Self::Output {
+                let merged = ATI_ANALYSIS
+                    .lock()
+                    .unwrap()
+                    .union_and_get_id(&self.0, &rhs.0);
+                Tagged(merged, self.1 $op rhs.1)
+            }
+        }
+
+        impl<T: Copy> std::ops::$trait<&Tagged<T>> for &Tagged<T>
+        where
+            T: std::ops::$trait<Output = T>,
+        {
+            type Output = Tagged<T>;
+            fn $method(self, rhs: &Tagged<T>) -> Self::Output {
                 let merged = ATI_ANALYSIS
                     .lock()
                     .unwrap()

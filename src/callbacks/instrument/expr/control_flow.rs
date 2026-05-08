@@ -46,7 +46,7 @@ pub fn transform_for(_visitor: &mut InstrumentingVisitor, for_expr: &mut rustc_a
 
 pub fn transform_loop(_visitor: &mut InstrumentingVisitor, _loop_expr: &mut rustc_ast::Expr) {}
 
-pub fn transform_match(_visitor: &mut InstrumentingVisitor, _match_expr: &mut rustc_ast::Expr) {}
+pub fn transform_match(_visitor: &mut InstrumentingVisitor, match_expr: &mut rustc_ast::Expr) {}
 
 // Handled in transform
 pub fn transform_let_condition(

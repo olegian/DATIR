@@ -49,6 +49,7 @@ pub fn reborrow_if_ref_mut(
     {
         return;
     }
+
     let inner = std::mem::replace(expr, rustc_ast::Expr::dummy());
     expr.kind = rustc_ast::ExprKind::MethodCall(Box::new(rustc_ast::MethodCall {
         seg: rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str("reborrow")),
