@@ -107,17 +107,17 @@ impl<'a, T: ?Sized> TaggedRefMut<'a, T> {
 /// it to construct the correctly transformed TaggedRefMut form. This is especially handy when
 /// a `ref mut` pattern binding is used.
 trait Reborrow<'a, T: ?Sized> {
-    fn reborrow(&'a mut self) -> TaggedRefMut<'a, T>;
+    fn reborrow(&mut self) -> TaggedRefMut<'_, T>;
 }
 
 impl<'a, T> Reborrow<'a, T> for Tagged<T> {
-    fn reborrow(&'a mut self) -> TaggedRefMut<'a, T> {
+    fn reborrow(&mut self) -> TaggedRefMut<'_, T> {
         self.as_tagged_ref_mut()
     }
 }
 
 impl<'a, T: ?Sized> Reborrow<'a, T> for TaggedRefMut<'a, T> {
-    fn reborrow(&'a mut self) -> TaggedRefMut<'a, T> {
+    fn reborrow(&mut self) -> TaggedRefMut<'_, T> {
         TaggedRefMut(self.0, &mut *self.1)
     }
 }
