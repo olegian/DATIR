@@ -10,15 +10,15 @@
 //! ```
 //!
 //! We want to observe comparability information regarding `x`, `y`, `z`, and the `return` at the
-//! entrance to this function, and the exit. These are foo's "Program Points" (a.k.a. ppts or
+//! entrance to this function, and the exit. These are `foo`'s "Program Points" (a.k.a. ppts or
 //! sites). This file will generate a "shim function", in place of the original function, which
 //! will create the ENTER ppt, bind all parameters to it, and update the comparability information
-//! at that ppt. Then, the shim will invoke the original function (which will be moved) to a newly
-//! generated function with a non-conflicting, unique name. After it returns, a  similar process is
+//! at that ppt. Then, the shim will invoke the original function (the body will be moved to a newly
+//! generated function with a non-conflicting, unique name). After it returns, a similar process is
 //! used to then create an EXIT ppt, bind only the formals *which are live* at the exit of the
-//! original function, and the return.
+//! original function, and the return value.
 //!
-//! The above example (also applying instrumentation to the original foo, and using some pseudocode)
+//! The above example (also applying instrumentation to the original `foo`, and using some pseudocode)
 //! would cause the following functions to be generated:
 //! ```rust
 //! fn foo(x: Tagged<u32>, y: SomeStruct, z: &SomeStruct) -> (Tagged<u32>, Tagged<f64>) {
@@ -46,21 +46,22 @@
 //! It is important that the shim function retains the name of the original function, so that
 //! every existing call to this function, calls the shim instead.
 //!
-//! Note that as `y` was an owned struct, it does not exist at the end of foo's execution, therefore
+//! Note that as `y` was an owned struct, it does not exist at the end of `foo`'s execution, therefore
 //! it is not bound to the exit site. Further note the return value, which is bound to the exit
 //! site.
 //!
-//! `.bind` functionality is dependant on the SiteBind trait, defined within the runtime library
+//! `.bind` functionality is dependant on the `SiteBind` trait, defined within the runtime library
 //! (see `/src/ati/site_binds.rs`). Implementation of this trait on compound types will result in
 //! each recursive field being bound to the site, as a *separate variable*. It's for this reason,
 //! that all user-defined compound types have a SiteBind implementation dynamically generated.
-//! Calling .bind with an untracked type will cause a no-op, as there is no known information about
-//! that value.
+//! Calling `.bind` on an untracked type will cause a no-op, as there is no known information about
+//! that value. Calling `.bind` on a simple `Tagged<T>` (or reference variant), will only associate
+//! the single Id.
 //!
 //! If the original function does not return anything (or returns unit), then the return value is
 //! also ignored. If the original function is main, corresponding ENTER and EXIT sites are still
-//! created, but at the end of the function, we invoke `.produce_ati()` (if DATIR is running in
-//!  --release mode), and `.report()` otherwise, to actually write output files.
+//! created, but at the end of the function, `.produce_ati()` is invoked (if DATIR is running in
+//!  --release mode), or `.report()` otherwise, to actually write comparability output.
 
 use crate::{
     callbacks::codegen::common::{
@@ -74,6 +75,10 @@ use crate::{
 
 use decls_gen::decls::RETURN_VAR_NAME;
 
+/// Generates a shim for a single function.
+/// 
+/// Shims perform site management, take a look at the header comment on this file to see
+/// what that involves.
 pub fn generate_function_shim(
     datir_config: &DatirConfig,
     first_pass: &FirstPassInfo,
@@ -173,9 +178,10 @@ pub fn generate_function_shim(
     *body = Some(new_block);
 }
 
-/// Source for an inner free function, the signature with an empty placeholder
-/// body. The caller parses this template, then transplants the user's
-/// original body.
+/// Source for an inner free function signature with an empty placeholder body. 
+/// 
+/// The caller parses this template, then transplants the user's original body into this, to 
+/// create an "inner" function which holds the original function's logic.
 fn build_inner_fn_template(
     inner_name: &str,
     generics: &rustc_ast::Generics,
@@ -208,7 +214,9 @@ fn build_inner_fn_template(
     format!("fn {inner_name}{generic_params}({declared}){ret}{where_clause} {{ }}")
 }
 
-/// Body for a free fn's wrapper, in the single-exit-site flow:
+/// Creates the body for a free fn's shim. 
+/// 
+/// Each shim will:
 /// 1. open ENTER, bind every formal, update;
 /// 2. call `inner_name(args)`;
 /// 3. open EXIT, bind only formals still live at exit (per the EXIT ppt's
