@@ -88,14 +88,14 @@ impl Site {
 
                         // make sure type_uf is aware of this new leader,
                         self.type_uf.introduce_tag(new_leader);
-                        *prev_leader = self.type_uf.union_tags(&prev_leader, &new_leader).unwrap();
+                        *prev_leader = self.type_uf.union_tags(prev_leader, &new_leader).unwrap();
                     }
 
                     let new_tag_leader = value_uf.find(new_tag).unwrap();
                     self.type_uf.introduce_tag(new_tag_leader);
                     *prev_leader = self
                         .type_uf
-                        .union_tags(&new_tag_leader, &prev_leader)
+                        .union_tags(&new_tag_leader, prev_leader)
                         .unwrap();
                 }
 
@@ -181,7 +181,7 @@ impl Sites {
     /// Outputs results for all analyzed sites to stdout.
     pub fn report(&mut self) {
         println!("===ATI-ANALYSIS-START===");
-        for (_, site) in self.locs.iter_mut() {
+        for site in self.locs.values_mut() {
             site.report();
         }
     }
@@ -194,7 +194,7 @@ impl Sites {
             let pt_name = name.replace('\\', "\\\\").replace(' ', "\\_");
             writeln!(output, "ppt {}", pt_name).unwrap();
             site.produce_ati(&mut output);
-            writeln!(output, "").unwrap();
+            writeln!(output).unwrap();
         }
     }
 }
@@ -245,12 +245,12 @@ impl UnionFind {
         }
 
         let index = self.parent.len();
-        self.id_to_index.insert(id.clone(), index);
-        self.index_to_set.push(id.clone());
+        self.id_to_index.insert(id, index);
+        self.index_to_set.push(id);
         self.parent.push(index);
         self.rank.push(0);
 
-        return id;
+        id
     }
 
     /// Gets the index in parent associated with this id.
@@ -263,7 +263,7 @@ impl UnionFind {
     pub fn find(&mut self, id: &Id) -> Option<Id> {
         let index = self.get_index(id)?;
         let leader_index = self.find_index(index);
-        Some(self.index_to_set[leader_index].clone())
+        Some(self.index_to_set[leader_index])
     }
 
     /// Associates the set represented by id1 and id2
@@ -271,7 +271,7 @@ impl UnionFind {
         let i1 = self.get_index(id1)?;
         let i2 = self.get_index(id2)?;
         let leader_index = self.union_indices(i1, i2);
-        Some(self.index_to_set[leader_index].clone())
+        Some(self.index_to_set[leader_index])
     }
 
     /// Finds the parent index of the set at index `x` of self.parent

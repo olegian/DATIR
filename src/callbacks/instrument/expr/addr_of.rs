@@ -33,7 +33,7 @@ pub fn transform_addr_of(visitor: &mut InstrumentingVisitor, addr_of_expr: &mut 
             panic!(
                 "First pass identified {:?} as the span of a index-by-range, yet \
                  second pass found a non-index expression: {:?}",
-                &referent.span,
+                referent.span,
                 rustc_ast_pretty::pprust::expr_to_string(referent)
             );
         };

@@ -74,7 +74,7 @@ pub fn parse_single_unstable_compiler_attribute(
 
     parser
         .parse_inner_attributes()
-        .expect(&format!("Unable to parse Attribute"))
+        .expect("Unable to parse Attribute")
         .into_iter()
         .next()
         .expect("Attribute list has zero elements")

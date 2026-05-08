@@ -67,7 +67,7 @@ fn wrap_ty_as_tagged_ref(outer_ty: &mut rustc_ast::Ty, mutable: bool) {
     // extract the referent and preserve the source
     // lifetime so `&'a T` becomes `TaggedRef<'a, T>`.
     let (lifetime, inner) = match &mut outer_ty.kind {
-        rustc_ast::TyKind::Ref(lt, rustc_ast::MutTy { box ty, .. }) => (lt.clone(), ty.clone()),
+        rustc_ast::TyKind::Ref(lt, rustc_ast::MutTy { box ty, .. }) => (*lt, ty.clone()),
         _ => panic!(
             "Trying to convert a non-ref type to a TaggedRef: {:?}",
             pprust::ty_to_string(outer_ty)

@@ -30,12 +30,11 @@ impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
         let ldid = expr.hir_id.owner.def_id;
         let typeck = self.tcx.typeck(ldid);
         let inner_ty = typeck.expr_ty(inner);
-        if let rustc_middle::ty::Ref(_, referent, _) = *inner_ty.kind() {
-            if referent.can_be_tupled() {
+        if let rustc_middle::ty::Ref(_, referent, _) = *inner_ty.kind()
+            && referent.can_be_tupled() {
                 self.first_pass
                     .tag_stripping_deref
                     .mark(expr.span, self.tcx.sess.source_map());
             }
-        }
     }
 }

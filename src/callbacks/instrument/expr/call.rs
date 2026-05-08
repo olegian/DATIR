@@ -37,7 +37,7 @@ pub fn transform_call(visitor: &mut InstrumentingVisitor, call_expr: &mut rustc_
     let ret_tupleable = call.ret_is_tupleable;
 
     for arg_expr in args.iter_mut() {
-        common::untuple(&mut **arg_expr);
+        common::untuple(arg_expr);
     }
 
     // FIXME: again, this is a bit wrong. We are currently ignoring the tracked/untracked

@@ -23,13 +23,12 @@ impl<'tcx, 'a> AnalyzeHirVisitor<'tcx, 'a> {
             let ldid = expr.hir_id.owner.def_id;
             let typeck = self.tcx.typeck(ldid);
             let inner_ty = typeck.expr_ty(inner);
-            if let rustc_middle::ty::Ref(_, referent, mutbl) = *inner_ty.kind() {
-                if mutbl.is_mut() && referent.can_be_tupled() {
+            if let rustc_middle::ty::Ref(_, referent, mutbl) = *inner_ty.kind()
+                && mutbl.is_mut() && referent.can_be_tupled() {
                     self.first_pass
                         .assign_through_tagged_ref_mut
                         .mark(expr.span, self.tcx.sess.source_map());
                 }
-            }
         }
     }
 }

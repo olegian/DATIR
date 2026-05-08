@@ -55,10 +55,10 @@ pub fn transform_binary(visitor: &mut InstrumentingVisitor, binary_expr: &mut ru
             unreachable!();
         };
         if !expr_common::contains_let_chain(lhs) {
-            expr_common::untuple(&mut **lhs);
+            expr_common::untuple(lhs);
         }
         if !expr_common::contains_let_chain(rhs) {
-            expr_common::untuple(&mut **rhs);
+            expr_common::untuple(rhs);
         }
         return;
     }
@@ -69,8 +69,8 @@ pub fn transform_binary(visitor: &mut InstrumentingVisitor, binary_expr: &mut ru
     let rustc_ast::ExprKind::Binary(_, lhs, rhs) = &mut binary_expr.kind else {
         unreachable!();
     };
-    expr_common::reborrow_if_ref_mut(visitor, &mut **lhs);
-    expr_common::reborrow_if_ref_mut(visitor, &mut **rhs);
+    expr_common::reborrow_if_ref_mut(visitor, lhs);
+    expr_common::reborrow_if_ref_mut(visitor, rhs);
 
     let rustc_ast::ExprKind::Binary(op, lhs, rhs) = &binary_expr.kind else {
         unreachable!();
@@ -134,7 +134,7 @@ pub fn transform_unary(visitor: &mut InstrumentingVisitor, unary_expr: &mut rust
     let rustc_ast::ExprKind::Unary(_, inner) = &mut unary_expr.kind else {
         unreachable!();
     };
-    expr_common::reborrow_if_ref_mut(visitor, &mut **inner);
+    expr_common::reborrow_if_ref_mut(visitor, inner);
 
     let rustc_ast::ExprKind::Unary(_, inner) = &unary_expr.kind else {
         unreachable!();

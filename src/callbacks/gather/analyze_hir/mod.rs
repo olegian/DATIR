@@ -89,13 +89,12 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
         // See [`FirstPassInfo::ref_mut_to_tupleable_locs`].
         let typeck = self.tcx.typeck(ldid);
         let expr_ty = typeck.expr_ty(expr);
-        if let rustc_middle::ty::Ref(_, referent, mutbl) = *expr_ty.kind() {
-            if mutbl.is_mut() && referent.can_be_tupled() {
+        if let rustc_middle::ty::Ref(_, referent, mutbl) = *expr_ty.kind()
+            && mutbl.is_mut() && referent.can_be_tupled() {
                 self.first_pass
                     .ref_mut_to_tupleable
                     .mark(expr.span, self.tcx.sess.source_map());
             }
-        }
 
         match expr.kind {
             // A call to a function might require us to untuple the arguments,

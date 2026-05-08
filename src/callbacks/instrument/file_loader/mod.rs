@@ -153,11 +153,10 @@ impl TransformingFileLoader {
         let file = FileContents::new(source, path, self.root_dir.get().map(|p| p.as_path()));
 
         // If this is the root file, remember its parent directory
-        if matches!(file.file_type, FileType::Root) {
-            if let Some(parent) = path.parent() {
+        if matches!(file.file_type, FileType::Root)
+            && let Some(parent) = path.parent() {
                 let _ = self.root_dir.set(parent.to_path_buf());
             }
-        }
 
         Ok(file)
     }
@@ -179,7 +178,7 @@ fn ast_to_source(krate: &rustc_ast::Crate) -> String {
     }
 
     for item in &krate.items {
-        let item_str = rustc_ast_pretty::pprust::item_to_string(&item);
+        let item_str = rustc_ast_pretty::pprust::item_to_string(item);
         output.push_str(&item_str);
         output.push_str("\n\n"); // two \n just to match normal file loader
     }

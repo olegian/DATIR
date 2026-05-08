@@ -75,14 +75,14 @@ impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         let mut passes = Passes::new();
         passes.register(Box::new(
             move |psess: &rustc_session::parse::ParseSess,
-                  mut krate: &mut rustc_ast::Crate,
+                  krate: &mut rustc_ast::Crate,
                   module_path: &str| {
                 // Single visitor that performs both expression instrumentation
                 // (literals, binary ops, calls, etc.) and type wrapping (Tagged<T>)
                 // in one AST walk.
                 let mut visitor =
                     InstrumentingVisitor::new(psess, &datir_config, &first_pass, module_path);
-                rustc_ast::mut_visit::MutVisitor::visit_crate(&mut visitor, &mut krate);
+                rustc_ast::mut_visit::MutVisitor::visit_crate(&mut visitor, krate);
 
                 // create all required function stubs, which perform site management
                 codegen::generate_shims(&datir_config, &first_pass, krate, module_path, psess);

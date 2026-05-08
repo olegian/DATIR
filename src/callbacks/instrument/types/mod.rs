@@ -69,7 +69,7 @@ pub fn recursively_transform_ast_type(target_ty: &mut rustc_ast::Ty) {
 
         // The following types have not been finished, but most likely,
         // they involve just pushing the operation down into any inner types.
-        rustc_ast::TyKind::Ptr(rustc_ast::MutTy { ty: _, .. }) => {
+        rustc_ast::TyKind::Ptr(rustc_ast::MutTy { .. }) => {
             // e.g.
             // recursively_transform_ast_type(ty);
             unimplemented!();

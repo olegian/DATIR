@@ -18,7 +18,7 @@ pub fn transform_if(_visitor: &mut InstrumentingVisitor, if_expr: &mut rustc_ast
     if common::contains_let_chain(cond) {
         return;
     }
-    common::untuple(&mut **cond);
+    common::untuple(cond);
 }
 
 /// Same as [`transform_if`], but for while loops.
@@ -29,7 +29,7 @@ pub fn transform_while(_visitor: &mut InstrumentingVisitor, while_expr: &mut rus
     if common::contains_let_chain(cond) {
         return;
     }
-    common::untuple(&mut **cond);
+    common::untuple(cond);
 }
 
 /// Force every ident binding in the for-loop pattern to `mut`. The deref /

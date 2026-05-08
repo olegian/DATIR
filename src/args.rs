@@ -18,7 +18,9 @@ use std::fmt;
 /// Specifies the possible command line arguments into DATIR,
 /// alonside any required arguments, short names, help messages, etc.
 pub fn datir_arg_init(program_name: &str) -> ArgParser {
-    let parser = ArgParser::new(
+    
+
+    ArgParser::new(
         program_name,
         "DATIR: dynamic abstract type inference for Rust",
     )
@@ -70,9 +72,7 @@ pub fn datir_arg_init(program_name: &str) -> ArgParser {
         "test",
         "--test",
         "Run in test mode, skipping debug logging and printing ATI output to stdout",
-    ));
-
-    parser
+    ))
 }
 
 /// Represents the different kinds of command line arguments
@@ -309,7 +309,7 @@ impl ArgParser {
                         parsed.flags.insert(spec.name);
                     }
                     ArgKind::Keyword => {
-                        let value = iter.next().ok_or_else(|| ArgError::MissingValue(arg))?;
+                        let value = iter.next().ok_or(ArgError::MissingValue(arg))?;
                         parsed.values.insert(spec.name, value);
                     }
                     ArgKind::Positional => {
