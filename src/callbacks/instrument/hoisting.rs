@@ -112,7 +112,7 @@ fn collect_hoists(
     // double check that this is in fact an expression
     // that should be hoisted. Only method call invocations
     // should be hoisted (as we added, for instance, a
-    // `expr.as_tagged_ref()` call).
+    // `expr.share()` call).
     if !requires_hoist(expr) {
         return;
     }
@@ -140,8 +140,8 @@ fn requires_hoist(expr: &rustc_ast::Expr) -> bool {
         rustc_ast::ExprKind::MethodCall(mc)
         if matches!(
             mc.seg.ident.name.as_str(),
-            "as_tagged_ref"
-            | "as_tagged_ref_mut"
+            "share"
+            | "reborrow"
             | "subslice"
             | "subslice_mut"
         ) && !is_place_expr(&mc.receiver)

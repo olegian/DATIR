@@ -31,31 +31,32 @@
 //!   `TaggedRef<[T]>` or `Tagged<[T; N]>` it acts on. See
 //!   `crate::callbacks::instrument::expr::addr_of` for more information.
 //!   Whenever the standard library is instrumented, it's possible this could be removed.
-//! 
-//! - A match statement, matches on a tagged type (meaning it original was either a tuplable 
+//!
+//! - A match statement, matches on a tagged type (meaning it originally was either a tuplable
 //!   primitive, or a reference to one). Because transformation will change the type of this target
 //!   to be a `Tagged<T>`, `TaggedRef<T>`, or `TaggedRefMut<T>`, we need to untuple the target
-//!   to allow all existing arms to pattern-match on the underlying `T`. Compound types do not 
+//!   to allow all existing arms to pattern-match on the underlying `T`. Compound types do not
 //!   require this treatment, as their shape is unchanged.
 //!   
-//!   A match statement could howver match on a compound type, that compound type could have tagged
+//!   A match statement could however match on a compound type, that compound type could have tagged
 //!   atomics within it. Any pattern which contains a literal would fail to pattern match against
-//!   the tagged type. Therefore, we life those kinds of patterns into arm guard clauses, so that 
-//!   the `MyEnum::Variant(10)` pattern being matched upon, becomes 
-//!   `MyEnum::Variant(x) if x == ATI::track(10)`, which preseves the pattern semantics, but allows
-//!   the comparison to happen between two Tagged types.
+//!   the contained tagged type. Therefore, we lift those kinds of patterns into arm guard clauses,
+//!   so, for example, the `MyEnum::Variant(10)` pattern being matched upon (the `10` here is
+//!   the problem), becomes `MyEnum::Variant(ref x) if matches!(**x, 10)`, which preseves the
+//!   pattern semantics. Note that we rely on the tagged types deref semantics, to access the
+//!   underlying value, ignoring the tag entirely for the purpose of the match.
 //!
 //! As of 3/29/26, we are choosing to ignore uninstrumented libraries, meaning that
 //! the first bullet is really an unnecessary step. The code is still left, as a proof-of-concept.
 
-use crate::{callbacks::gather::first_pass_info::FirstPassInfo, callbacks::types::CanBeTupled};
+use crate::callbacks::gather::first_pass_info::FirstPassInfo;
 
 mod assignment;
 mod call;
 mod deref;
 mod index;
-mod references;
 mod match_expr;
+mod references;
 
 /// Visitor that finds code spans of interest (listed at the top of this file).
 /// Updates `self.first_pass` to include this information.
@@ -70,8 +71,8 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
     type NestedFilter = rustc_middle::hir::nested_filter::All;
 
     /// Combined with above `NestedFilter`, defining this method defines how the visitor
-    /// is going to traverse the HIR tree. 
-    /// 
+    /// is going to traverse the HIR tree.
+    ///
     /// This configuration will have this visitor visit all nested expressions, as in we are doing
     /// a "deep" traversal, visiting every single expression as opposed
     /// to doing a "shallow" traversal, visiting only the top-level exprs.
@@ -80,7 +81,7 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
     }
 
     /// Do not traverse down any Anon Const expressions.
-    /// 
+    ///
     /// Anon consts (array lengths, const generics, inline consts) live in
     /// their own owner with no typeck results, and have no values for us to
     /// instrument. Skip the entire subtree when encountered.
@@ -95,20 +96,9 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
             return;
         }
 
-        // Regardless of the expr kind, record any expression whose adjusted type is
-        // `&mut T` with a tupleable `T`. Pass 2 must explicitly reborrow such operands
-        // before consuming them, as &mut T does not transfer ownership when moved, but a
-        // TaggedRefMut<T> = (&mut Id, &mut T) will. Reborrowing allows the `TaggedRefMut`
-        // to act in a semantically identical way to the uninstrumented `&mut T`.
-        // See [`FirstPassInfo::ref_mut_to_tupleable_locs`].
-        let typeck = self.tcx.typeck(ldid);
-        let expr_ty = typeck.expr_ty(expr);
-        if let rustc_middle::ty::Ref(_, referent, mutbl) = *expr_ty.kind()
-            && mutbl.is_mut() && referent.can_be_tupled() {
-                self.first_pass
-                    .ref_mut_to_tupleable
-                    .mark(expr.span, self.tcx.sess.source_map());
-            }
+        // Regardless of expr kind, normalize any `&T` / `&mut T`-typed expression with a
+        // tupleable / array / slice referent. See [`Self::observe_ref_normalization`].
+        self.observe_ref_normalization(expr);
 
         match expr.kind {
             // A call to a function might require us to untuple the arguments,
@@ -116,13 +106,6 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
             // which we are not going to be instrumenting.
             rustc_hir::ExprKind::Call(..) => {
                 self.observe_call(expr);
-            }
-
-            // we are taking a reference to some sort of expression. If the
-            // reference is to some type which is tuplable (e.g. &u32, or &mut &f64)
-            // then during instrumentation we need to create a TaggedRef<T> from the Tagged<T>.
-            rustc_hir::ExprKind::AddrOf(..) => {
-                self.observe_ref(expr);
             }
 
             // Unary * on an instrumented &T / &mut T with tupleable T
@@ -156,7 +139,7 @@ impl<'tcx, 'a> rustc_hir::intravisit::Visitor<'tcx> for AnalyzeHirVisitor<'tcx, 
 
             // Match statements can pattern match on either atomics or compound types.
             // Compound types work out of the box post transformation, however atomics
-            // will have thier type changed from a `T` to a `Tagged<T>`, and matching on a 
+            // will have thier type changed from a `T` to a `Tagged<T>`, and matching on a
             // `Tagged<T>` is semantically different from `T`. Therefore, we find all places
             // where a tupled primitive is matched on, to untuple it within the second pass,
             // to just match on the underlying `T`.

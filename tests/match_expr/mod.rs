@@ -145,6 +145,22 @@ fn match_expr() {
         .register("return", 1)
     );
 
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root(
+            "match_expr/main.rs::with_existing_guard:::ENTER",
+        ))
+        .register("x::V2.0", 0)
+        .register("y", 1)
+    );
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root(
+            "match_expr/main.rs::with_existing_guard:::EXIT",
+        ))
+        .register("x::V2.0", 0)
+        .register("y", 1)
+        .register("return", 1)
+    );
+
     let executable = Path::new(file!()).parent().unwrap().join("match_expr.out");
     delete(&executable);
 

@@ -7,7 +7,7 @@ enum MyEnum<'a> {
     V1,
     V2(usize),
     V3(MyStruct),
-    V4(&'a [usize])
+    V4(&'a [usize]),
 }
 
 fn main() {
@@ -23,17 +23,11 @@ fn main() {
     let y = 20;
     bar(&x, y);
 
-    let x = MyEnum::V3(MyStruct {
-        x: 0,
-        y: 1,
-    });
+    let x = MyEnum::V3(MyStruct { x: 0, y: 1 });
     let y = 20;
     baz(x, y);
 
-    let x = MyEnum::V3(MyStruct {
-        x: 2,
-        y: 3,
-    });
+    let x = MyEnum::V3(MyStruct { x: 2, y: 3 });
     let y = 30;
     quux(x, y);
 
@@ -53,21 +47,18 @@ fn main() {
     let x = MyEnum::V2(10);
     let y = 40;
     destructure_to_value(&x, y);
+
+    let x = MyEnum::V2(100);
+    let y = 40;
+    with_existing_guard(&x, y);
 }
 
 fn foo(x: &MyEnum, y: usize) -> usize {
     match x {
         MyEnum::V1 => 100,
         MyEnum::V2(x) => x + y,
-        MyEnum::V3(MyStruct {
-            x,
-            ..
-        }) => {
-            x + y
-        },
-        MyEnum::V4(x) => {
-            x.len() + y
-        },
+        MyEnum::V3(MyStruct { x, .. }) => x + y,
+        MyEnum::V4(x) => x.len() + y,
     }
 }
 
@@ -75,76 +66,51 @@ fn bar(x: &MyEnum, y: usize) -> usize {
     match x {
         MyEnum::V1 => 100,
         MyEnum::V2(x) => x + y,
-        MyEnum::V3(MyStruct {
-            x,
-            ..
-        }) => {
-            x + y
-        },
-        MyEnum::V4(x) => {
-            x.len() + y
-        },
+        MyEnum::V3(MyStruct { x, .. }) => x + y,
+        MyEnum::V4(x) => x.len() + y,
     }
 }
 
 fn baz(mut x: MyEnum, y: usize) -> usize {
     match x {
-        MyEnum::V1 => {
-            y
-        },
-        MyEnum::V2(ref x) => {
-            x + y
-        },
+        MyEnum::V1 => y,
+        MyEnum::V2(ref x) => x + y,
         MyEnum::V3(ref mut my_struct) => {
-            let MyStruct {
-                x,
-                y,
-            } = my_struct;
+            let MyStruct { x, y } = my_struct;
 
             *x + *y
-        },
-        MyEnum::V4(ref slice) => {
-            slice.len() + y
-        },
+        }
+        MyEnum::V4(ref slice) => slice.len() + y,
     }
 }
 
 fn quux(mut x: MyEnum, y: usize) -> usize {
     match &mut x {
-        MyEnum::V1 => {
-            y
-        },
-        MyEnum::V2(x) => {
-            *x + y
-        },
+        MyEnum::V1 => y,
+        MyEnum::V2(x) => *x + y,
         MyEnum::V3(my_struct) => {
-            let MyStruct {
-                x,
-                y,
-            } = my_struct;
+            let MyStruct { x, y } = my_struct;
 
             *x + *y
-        },
-        MyEnum::V4(slice) => {
-            slice.len() + y
-        },
+        }
+        MyEnum::V4(slice) => slice.len() + y,
     }
 }
 
 fn primitive(x: u32, y: u32) -> u32 {
     match x {
-        0..=5  => { x + y }
-        6..=10 => { x + y }
-        _      => { y }
+        0..=5 => x + y,
+        6..=10 => x + y,
+        _ => y,
     }
 }
 
 fn primitive_mut(mut x: u32, y: u32) -> u32 {
     match &mut x {
         // idea is to convert above x: TaggedRefMut<u32>  into x.1 so it becomes just a u32
-        0..=5  => { x + y }
-        6..=10 => { x + y }
-        _      => { y }
+        0..=5 => x + y,
+        6..=10 => x + y,
+        _ => y,
     }
 }
 
@@ -152,22 +118,31 @@ fn untracked_primitive(x: &str, a: u32, b: u32, c: u32) -> u32 {
     match x {
         "hello" => a,
         "world" => b,
-        _ => c
+        _ => c,
     }
 }
 
 fn destructure_to_value(x: &MyEnum, y: usize) -> usize {
     match x {
-        MyEnum::V1 => { y },
-        MyEnum::V2(10) => { y },
+        MyEnum::V1 => y,
+        MyEnum::V2(10) => y,
         // idea is to turn the above into this:
         // MyEnum::V2(x) if *x == 10 => { y },
-        MyEnum::V2(x) => { x + y },
-        MyEnum::V3(my_struct) => {
-            my_struct.x + y
-        },
-        MyEnum::V4(items) => {
-            items.len() + y
-        },
+        MyEnum::V2(x) => x + y,
+        MyEnum::V3(my_struct) => my_struct.x + y,
+        MyEnum::V4(items) => items.len() + y,
+    }
+}
+
+fn with_existing_guard(x: &MyEnum, y: usize) -> usize {
+    match x {
+        MyEnum::V1 => y,
+        MyEnum::V2(x) if *x == 10 => y,
+        MyEnum::V2(x) if *x > 10 => y,
+        MyEnum::V2(x) if *x < 10 => y,
+        MyEnum::V2(_) => y,
+        MyEnum::V3(MyStruct { x, y: 10 }) if *x == 10 => x + y,
+        MyEnum::V3(MyStruct { x, y }) => x + y,
+        MyEnum::V4(items) => items.len() + y,
     }
 }

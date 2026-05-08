@@ -69,8 +69,9 @@ pub fn transform_binary(visitor: &mut InstrumentingVisitor, binary_expr: &mut ru
     let rustc_ast::ExprKind::Binary(_, lhs, rhs) = &mut binary_expr.kind else {
         unreachable!();
     };
-    expr_common::reborrow_if_ref_mut(visitor, lhs);
-    expr_common::reborrow_if_ref_mut(visitor, rhs);
+    expr_common::normalize_tagged_ref(visitor, lhs);
+    expr_common::normalize_tagged_ref(visitor, rhs);
+    // we are now dealing with lhs/rhs normalized to a Tagged, TaggedRef, or TaggedRefMut.
 
     let rustc_ast::ExprKind::Binary(op, lhs, rhs) = &binary_expr.kind else {
         unreachable!();
@@ -134,7 +135,7 @@ pub fn transform_unary(visitor: &mut InstrumentingVisitor, unary_expr: &mut rust
     let rustc_ast::ExprKind::Unary(_, inner) = &mut unary_expr.kind else {
         unreachable!();
     };
-    expr_common::reborrow_if_ref_mut(visitor, inner);
+    expr_common::normalize_tagged_ref(visitor, inner);
 
     let rustc_ast::ExprKind::Unary(_, inner) = &unary_expr.kind else {
         unreachable!();

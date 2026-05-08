@@ -9,6 +9,10 @@
 //! [TaggedRef] is shared and `Copy`. [TaggedRefMut] is unique and must not be `Copy` or
 //! `Clone`, so pass 2 emits explicit [Reborrow::reborrow] calls anywhere the source code
 //! would have relied on the compiler's implicit `&mut` reborrow.
+//! 
+//! [Share::share] is the shared analogue of [Reborrow::reborrow]. As `&T` references are Copy,
+//! this is always a semantically valid operation, and is used heavily by pass 2 to normalize
+//! reference shapes.
 
 use crate::ati::tagged::{Id, TagTuple, Tagged};
 
@@ -31,19 +35,6 @@ pub struct TaggedRef<'a, T: ?Sized>(pub &'a Id, pub &'a T);
 /// Move-only by construction. Pass 2 inserts an explicit [Reborrow::reborrow] call
 /// anywhere the source code would have relied on Rust's implicit `&mut` reborrow.
 pub struct TaggedRefMut<'a, T: ?Sized>(pub &'a mut Id, pub &'a mut T);
-
-impl<T> Tagged<T> {
-    /// Borrows `self` as a [TaggedRef]. Used by pass 2 to lower `&x` of a [Tagged] expression.
-    fn as_tagged_ref(&self) -> TaggedRef<'_, T> {
-        TaggedRef(&self.0, &self.1)
-    }
-
-    /// Borrows `self` as a [TaggedRefMut]. Used by pass 2 to lower `&mut x` of a [Tagged]
-    /// expression.
-    fn as_tagged_ref_mut(&mut self) -> TaggedRefMut<'_, T> {
-        TaggedRefMut(&mut self.0, &mut self.1)
-    }
-}
 
 impl<'a, T: ?Sized> TagTuple for TaggedRef<'a, T> {
     type Inner = T;
@@ -95,7 +86,45 @@ impl<'a, T: ?Sized> TaggedRefMut<'a, T> {
     }
 }
 
-/// This trait allows for explicit reborrowing of mutable references.
+/// Shared analogue of [Reborrow], yielding a fresh [TaggedRef] over `self` regardless of
+/// whether `self` is owned ([Tagged]) or already a borrow ([TaggedRef] / [TaggedRefMut]). Used
+/// for normalization.
+///
+/// Bindings extracted from compound-type patterns (e.g. `MyEnum::V2(x)` when `V2`'s field is
+/// `Tagged<T>`) end up typed as `&Tagged<T>` rather than [TaggedRef], because match
+/// ergonomics auto-refs the field directly. Pass 2's deref / index / etc. rewrites need a
+/// uniform "give me a [TaggedRef] view" operation that resolves correctly across all four
+/// shapes the operand might have post-instrumentation: `Tagged<T>`, `&Tagged<T>`,
+/// `TaggedRef<T>`, or `TaggedRefMut<T>`. Method auto-deref then handles the `&`-prefixed
+/// variants automatically.
+pub trait Share<'a, T: ?Sized> {
+    fn share(&self) -> TaggedRef<'_, T>;
+}
+
+impl<T> Share<'_, T> for Tagged<T> {
+    fn share(&self) -> TaggedRef<'_, T> {
+        TaggedRef(&self.0, &self.1)
+    }
+}
+
+impl<'a, T: ?Sized> Share<'a, T> for TaggedRef<'a, T> {
+    /// `TaggedRef` is `Copy`, so `share` just hands back a copy reborrowed at the shorter
+    /// lifetime of `&self`.
+    fn share(&self) -> TaggedRef<'_, T> {
+        TaggedRef(self.0, self.1)
+    }
+}
+
+impl<'a, T: ?Sized> Share<'a, T> for TaggedRefMut<'a, T> {
+    /// Downgrades the unique borrows held by `TaggedRefMut` to shared borrows for the
+    /// lifetime of `&self`.
+    fn share(&self) -> TaggedRef<'_, T> {
+        TaggedRef(&*self.0, &*self.1)
+    }
+}
+
+/// This trait allows for explicit reborrowing of mutable references, used for preserving
+/// ownership semantics and for `&mut T` normalization to [TaggedRefMut].
 /// 
 /// This manual analogue of Rust's implicit `&mut` reborrow, allows [TaggedRefMut] to remain
 /// move-only (as it must not be `Copy` or `Clone`, to preserve unique-borrow semantics). 
@@ -106,13 +135,13 @@ impl<'a, T: ?Sized> TaggedRefMut<'a, T> {
 /// if a mutable reference to a `Tagged<T>` is ever constructed, we can simply reborrow
 /// it to construct the correctly transformed `TaggedRefMut` form. This is especially handy when
 /// a `ref mut` pattern binding is used.
-trait Reborrow<'a, T: ?Sized> {
+pub trait Reborrow<'a, T: ?Sized> {
     fn reborrow(&mut self) -> TaggedRefMut<'_, T>;
 }
 
 impl<'a, T> Reborrow<'a, T> for Tagged<T> {
     fn reborrow(&mut self) -> TaggedRefMut<'_, T> {
-        self.as_tagged_ref_mut()
+        TaggedRefMut(&mut self.0, &mut self.1)
     }
 }
 

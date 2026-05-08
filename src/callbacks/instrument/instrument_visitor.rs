@@ -81,7 +81,7 @@
 //! completely different set of elements inside of the slice itself! We cannot guarantee that
 //! the length-id and the data itself will be contiguous. Therefore, we convert `&Tagged<T>` into
 //! a `TaggedRef<T> = (&Id, &T)` or a `TaggedRefMut<T> = (&mut Id, &mut T)`, by utilizing the
-//! runtime library `.as_tagged_ref()` / `.as_tagged_ref_mut()` functions defined on all
+//! runtime library's `.share()` / `.reborrow()` functions defined on all
 //! `Tagged<T>` types. It's for this reason the first gather pass has to locate all places where a
 //! reference to a Tagged type is constructed, so that the appropriate method call can be inserted.
 //!
@@ -112,7 +112,7 @@
 //! ```
 //! will result in:
 //! ```rust
-//! let x = (Tagged(0, 10) + Tagged(1, 20)).as_tagged_ref();
+//! let x = (Tagged(0, 10) + Tagged(1, 20)).share();
 //! ```
 //! The resulting `TaggedRef` will refer to the result of addition, but the result is not bound to
 //! any variable! This means the result will be dropped, and the reference left dangling. The
@@ -120,7 +120,7 @@
 //! the above into:
 //! ```rust
 //! let __ati_hoist0 = Tagged(0, 10) + Tagged(1, 20);
-//! let x = __ati_hoist0.as_tagged_ref();
+//! let x = __ati_hoist0.share();
 //! ```
 //! to make sure the result is bound to a variable before a reference to it is also stored. This
 //! mechanism is required for all added method invocations.

@@ -5,9 +5,12 @@
 //! runtime library's `.subslice()` / `.subslice_mut()` method call, to push the indexing operation
 //! down into the collection's representation (for instance, into a `TaggedRef<[T]>`).
 //!
-//! If the first pass determined that this reference is being taken to some tuplable type `T`,
-//! then use the runtime library's `.as_tagged_ref()` / `.as_tagged_ref_mut()` methods to convert
-//! the `Tagged<T>` into a `TaggedRef<T>` / `TaggedRefMut<T>`.
+//! Otherwise, if the first pass determined that this reference is being taken to some type
+//! whose post-instrumentation shape is `Tagged<T>` / `Tagged<[T; N]>` / `TaggedRef<[T]>`,
+//! emit `.share()` / `.reborrow()` to produce the corresponding `TaggedRef<T>` /
+//! `TaggedRefMut<T>` view. Mutability comes from the [`FirstPassInfo::ref_to_tupleable`]
+//! payload, not from the AST `&` / `&mut` token, so the same lookup that drives all other
+//! ref-normalization sites also drives this one.
 
 use crate::{callbacks::instrument::instrument_visitor::InstrumentingVisitor, callbacks::parsing};
 
@@ -45,33 +48,36 @@ pub fn transform_addr_of(visitor: &mut InstrumentingVisitor, addr_of_expr: &mut 
         return;
     }
 
-    // handle refernces to tupleable types.
-    if visitor
+    // Reference to a type whose post-instrumentation shape needs normalization
+    // into a `TaggedRef` / `TaggedRefMut`.
+    let Some(recorded_mutbl) = visitor
         .first_pass
-        .ref_to_tupleable_ty
-        .contains(addr_of_expr.span, visitor.psess.source_map())
-    {
-        // need to transform to (addr_of).as_tagged_ref()
-        let mut_str = if mutbl.is_mut() { "_mut" } else { "" };
+        .ref_to_tupleable
+        .get(addr_of_expr.span, visitor.psess.source_map())
+        .copied()
+    else {
+        return;
+    };
+    let method = match recorded_mutbl {
+        rustc_ast::Mutability::Mut => "reborrow",
+        rustc_ast::Mutability::Not => "share",
+    };
 
-        let old_kind = std::mem::replace(
-            &mut addr_of_expr.kind,
-            rustc_ast::ExprKind::Tup(thin_vec::ThinVec::new()),
-        );
-        let receiver = Box::new(rustc_ast::Expr {
-            id: addr_of_expr.id,
-            span: addr_of_expr.span,
-            attrs: std::mem::take(&mut addr_of_expr.attrs),
-            tokens: addr_of_expr.tokens.take(),
-            kind: old_kind,
-        });
-        addr_of_expr.kind = rustc_ast::ExprKind::MethodCall(Box::new(rustc_ast::MethodCall {
-            seg: rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str(&format!(
-                "as_tagged_ref{mut_str}"
-            ))),
-            receiver,
-            args: [].into(),
-            span: rustc_span::DUMMY_SP,
-        }));
-    }
+    let old_kind = std::mem::replace(
+        &mut addr_of_expr.kind,
+        rustc_ast::ExprKind::Tup(thin_vec::ThinVec::new()),
+    );
+    let receiver = Box::new(rustc_ast::Expr {
+        id: addr_of_expr.id,
+        span: addr_of_expr.span,
+        attrs: std::mem::take(&mut addr_of_expr.attrs),
+        tokens: addr_of_expr.tokens.take(),
+        kind: old_kind,
+    });
+    addr_of_expr.kind = rustc_ast::ExprKind::MethodCall(Box::new(rustc_ast::MethodCall {
+        seg: rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str(method)),
+        receiver,
+        args: [].into(),
+        span: rustc_span::DUMMY_SP,
+    }));
 }

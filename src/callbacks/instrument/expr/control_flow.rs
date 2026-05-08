@@ -82,10 +82,20 @@ pub fn transform_match(visitor: &mut InstrumentingVisitor, match_expr: &mut rust
         .contains(target.span, visitor.psess.source_map())
     {
         common::untuple(target);
-        return;
     }
 
     for arm in arms {
+        // Arm guards in surface syntax accept a `bool`, but pass-2's binary-op
+        // transform may have lifted comparisons inside the guard to
+        // `Tagged<bool>` (same situation as `if` / `while` conditions).
+        // Untuple to a raw `bool` so the guard still type-checks. Skip when
+        // the cond is a let-chain — those evaluate to raw `bool` already.
+        if let Some(g) = arm.guard.as_mut()
+            && !common::contains_let_chain(&g.cond)
+        {
+            common::untuple(&mut g.cond);
+        }
+
         let mut counter: usize = 0;
         let mut frags: Vec<String> = Vec::new();
         lift_lit_pats(visitor, &mut arm.pat, &mut counter, &mut frags);

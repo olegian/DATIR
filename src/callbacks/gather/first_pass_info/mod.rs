@@ -57,10 +57,6 @@ pub struct FirstPassInfo {
     /// `.subslice()` call must be inserted.
     pub index_by_range: SpanFacts<()>,
 
-    /// Spans of `Ref` expressions referring to a type T which is tupleable, which require a
-    /// `.as_tagged_ref()` call.
-    pub ref_to_tupleable_ty: SpanFacts<()>,
-
     /// Spans of unary `*` expressions whose operand's type is `&T` / `&mut T`
     /// with `T` tupleable. Post-instrumentation these operate on a
     /// `TaggedRef` / `TaggedRefMut`, and a raw `*` would strip the tag.
@@ -71,15 +67,24 @@ pub struct FirstPassInfo {
     /// to write to both the value and Id places.
     pub assign_through_tagged_ref_mut: SpanFacts<()>,
 
-    /// Spans of expressions whose post-instrumentation type is a
-    /// `TaggedRefMut<T>`, i.e. their typeck-resolved (post-adjustment) type
-    /// is `&mut T` with `T` tupleable. `TaggedRefMut` is move-only, so any
-    /// pass-2 rewrite that consumes such an expression (binding it into
-    /// `let __ati_lhs = ...`, moving it into the emitted parameters of the inner function) must 
-    /// reborrow instead, otherwise the original binding is invalidated for any use
-    /// later in the function. The reborrow is always a semantically safe operation in an
-    /// operand position.
-    pub ref_mut_to_tupleable: SpanFacts<()>,
+    /// Spans of expressions whose typeck-resolved (post-adjustment) type is
+    /// `&T` or `&mut T` with `T` tupleable. Pass 2 normalizes these operands
+    /// at consumption sites to a uniform `TaggedRef<T>` / `TaggedRefMut<T>`
+    /// shape so downstream rewrites don't have to reason about the four
+    /// possible source shapes (`Tagged<T>`, `&Tagged<T>`, `TaggedRef<T>`,
+    /// `TaggedRefMut<T>`) that a tracked-reference operand can take.
+    ///
+    /// The recorded `Mutability` selects which projection to emit:
+    /// - `Mutability::Mut` uses a `.reborrow()` (yielding `TaggedRefMut<T>`).
+    ///   This is important for soundness, as `TaggedRefMut` is move-only, so any
+    ///   rewrite that consumes the operand (binding into a temporary, moving
+    ///   into emitted parameters of the inner function, etc.) would
+    ///   invalidate the source binding without an explicit reborrow, even though
+    ///   the corresponding &mut T does not carry ownership.
+    /// - `Mutability::Not` uses a `.share()` (yielding `TaggedRef<T>`). This is done
+    ///   purely for shape-normalization, as `TaggedRef` is `Copy`, so being over-eager
+    ///   about marking is harmless.
+    pub ref_to_tupleable: SpanFacts<rustc_ast::Mutability>,
 
     /// Spans of match target expressions which are tagged types. These types 
     /// require untupling, so that the patterns within each arm of the statement

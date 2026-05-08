@@ -26,7 +26,7 @@
 //! - Arrays are tracked via the runtime libraries `ATI::track(<array>)`, this adds an
 //!   Id which corresponds to the length of the array expression.
 //! - References (to tuplable primitives) are converted to `TaggedRef` / `TaggedRefMuts` via the
-//!   `.as_tagged_ref()` defined within the runtime library.
+//!   `.share()/.reborrow()` defined within the runtime library.
 //! - Calls to uninstrumented method and function calls have thier inputs "untupled", and
 //!   return value tupled, if the call was found to return a tuplable value by the Gather pass.
 //! - If/While conditions are appropriately untupled, to have the condition evaluate to a boolean

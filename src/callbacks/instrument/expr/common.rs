@@ -35,26 +35,31 @@ pub fn untuple(expr: &mut rustc_ast::Expr) {
     expr.kind = rustc_ast::ExprKind::Field(Box::new(inner), rustc_span::Ident::from_str("1"));
 }
 
-/// If `expr`'s span was marked by pass 1 as a `&mut T` (`T` tupleable), i.e.
-/// post-instrumentation it is a `TaggedRefMut<T>`, rewrite it in place to
-/// `(expr).reborrow()` so any consumption (move into a binding, into
-/// emitted args, etc.) doesn't invalidate the original source binding.
-/// `TaggedRefMut` is move-only.
-pub fn reborrow_if_ref_mut(
+/// If `expr`'s span was marked by pass 1 in `ref_to_tupleable`, normalize it
+/// in place to a uniform tracked-reference shape so downstream rewrites can
+/// treat all operands the same way.
+///
+/// - `Mutability::Mut`: emit `(expr).reborrow()` nets a `TaggedRefMut<T>`.
+/// - `Mutability::Not`: emit `(expr).share()` → `TaggedRef<T>`. 
+pub fn normalize_tagged_ref(
     visitor: &crate::callbacks::instrument::instrument_visitor::InstrumentingVisitor,
     expr: &mut rustc_ast::Expr,
 ) {
-    if !visitor
+    let Some(mutbl) = visitor
         .first_pass
-        .ref_mut_to_tupleable
-        .contains(expr.span, visitor.psess.source_map())
-    {
+        .ref_to_tupleable
+        .get(expr.span, visitor.psess.source_map())
+    else {
         return;
-    }
+    };
+    let method = match mutbl {
+        rustc_ast::Mutability::Mut => "reborrow",
+        rustc_ast::Mutability::Not => "share",
+    };
 
     let inner = std::mem::replace(expr, rustc_ast::Expr::dummy());
     expr.kind = rustc_ast::ExprKind::MethodCall(Box::new(rustc_ast::MethodCall {
-        seg: rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str("reborrow")),
+        seg: rustc_ast::PathSegment::from_ident(rustc_span::Ident::from_str(method)),
         receiver: Box::new(inner),
         args: [].into(),
         span: rustc_span::DUMMY_SP,
