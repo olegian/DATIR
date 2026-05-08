@@ -43,12 +43,12 @@ fn main() {
 
     let a = 1;
     let b = 2;
-    let c = 3;
-    untracked_primitive("world", a, b, c);
+    primitive_mut(a, b);
 
     let a = 1;
     let b = 2;
-    primitive_mut(a, b);
+    let c = 3;
+    untracked_primitive("world", a, b, c);
 }
 
 fn foo(x: &MyEnum, y: usize) -> usize {

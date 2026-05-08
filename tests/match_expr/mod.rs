@@ -57,6 +57,55 @@ fn match_expr() {
             .register("return", 0),
     );
 
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::quux:::ENTER"))
+            .register("x::V3.0.x", 0)
+            .register("x::V3.0.y", 1)
+            .register("y", 3),
+    );
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::quux:::EXIT"))
+            .register("y", 3)
+            .register("return", 0),
+    );
+
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::primitive:::ENTER"))
+            .register("x", 0)
+            .register("y", 1),
+    );
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::primitive:::EXIT"))
+            .register("x", 0)
+            .register("y", 1)
+            .register("return", 1),
+    );
+
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::primitive_mut:::ENTER"))
+            .register("x", 0)
+            .register("y", 1),
+    );
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::primitive_mut:::EXIT"))
+            .register("x", 0)
+            .register("y", 0)
+            .register("return", 0),
+    );
+
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::untracked_primitive:::ENTER"))
+            .register("a", 0)
+            .register("b", 1)
+            .register("c", 2),
+    );
+    expected.register_site(
+        ExpectedSite::new(prefix_with_path_from_root("match_expr/main.rs::untracked_primitive:::EXIT"))
+            .register("a", 0)
+            .register("b", 1)
+            .register("c", 2)
+            .register("return", 1),
+    );
 
     let executable = Path::new(file!()).parent().unwrap().join("match_expr.out");
     delete(&executable);
