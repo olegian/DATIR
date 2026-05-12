@@ -1,5 +1,5 @@
 # DATIR: Dynamic Abstract Type Inference in Rust
-This repository contains all the code necessary to automatically insert instrumentation into arbitrary Rust source code, to perform abstract type inference (ATI). This project is loosely based on [dynamic inference of abstract types](https://dl.acm.org/doi/10.1145/1146238.1146268).
+This repository contains all the code necessary to compile arbitrary Rust source code, adding in instrumentation which captures information regarding the abstract types of formal and return values from each function (a.k.a. Abstract Type Inference, or ATI). This project is loosely based on [dynamic inference of abstract types](https://dl.acm.org/doi/10.1145/1146238.1146268).
 
 ## Using This Repository
 This instrumentation relies on `rustc`'s query system to execute callbacks. This requires linking against `rustc`'s nightly build. To do so, run the following bash [commands](https://rust-lang.github.io/rustup/installation/index.html):
