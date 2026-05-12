@@ -28,6 +28,11 @@ use crate::ati::tagged::{Id, TagTuple, Tagged};
 /// directly on [TaggedRef] and [TaggedRefMut], since there is no single [Tagged] value in
 /// memory to deref through.
 pub struct TaggedRef<'a, T: ?Sized>(pub &'a Id, pub &'a T);
+impl<'a, T: std::hash::Hash> std::hash::Hash for TaggedRef<'a, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
+    }
+}
 
 /// Unique-borrow variant of [TaggedRef]. Holds one mutable borrow of the id and one mutable
 /// borrow of the inner value.
@@ -35,6 +40,11 @@ pub struct TaggedRef<'a, T: ?Sized>(pub &'a Id, pub &'a T);
 /// Move-only by construction. Pass 2 inserts an explicit [Reborrow::reborrow] call
 /// anywhere the source code would have relied on Rust's implicit `&mut` reborrow.
 pub struct TaggedRefMut<'a, T: ?Sized>(pub &'a mut Id, pub &'a mut T);
+impl<'a, T: std::hash::Hash> std::hash::Hash for TaggedRefMut<'a, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
+    }
+}
 
 impl<'a, T: ?Sized> TagTuple for TaggedRef<'a, T> {
     type Inner = T;

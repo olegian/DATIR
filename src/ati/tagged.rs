@@ -44,6 +44,12 @@ impl Tagger {
 #[derive(Debug, Clone, Copy)]
 pub struct Tagged<T: ?Sized>(pub Id, pub T);
 
+impl<T: std::hash::Hash> std::hash::Hash for Tagged<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
+    }
+}
+
 /// Common abstraction over every tagged wrapper, exposing the wrapper's id and a borrow of
 /// its inner value.
 ///

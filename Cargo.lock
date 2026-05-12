@@ -12,4 +12,4 @@ dependencies = [
 [[package]]
 name = "decls-gen"
 version = "0.1.0"
-source = "git+https://github.com/olegian/daikon-rust-decls-gen#427126b551ff94c16b7c86810b85cc0b4051d076"
+source = "git+https://github.com/olegian/daikon-rust-decls-gen#a93b447afae82eb886d92b062ff6dfde8d49f26f"

@@ -105,7 +105,7 @@ impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
         krate: &mut rustc_ast::Crate,
     ) -> rustc_driver::Compilation {
         let cwd = std::env::current_dir().unwrap();
-        inject_ati_directory(&cwd.join("src/ati"), &compiler.sess.psess, krate);
+        inject_files_in_dir(&cwd.join("src/ati"), &compiler.sess.psess, krate);
         inject_crate_attributes(&compiler.sess.psess, krate);
 
         rustc_driver::Compilation::Continue
@@ -131,7 +131,7 @@ impl rustc_driver::Callbacks for TransformAbstractSyntaxTreeCallbacks {
 
 /// Injects every `.rs` file in `dir` (except `mod.rs`) into `krate` via
 /// [`define_types::define_types_from_file`].
-fn inject_ati_directory(
+fn inject_files_in_dir(
     dir: &std::path::Path,
     psess: &rustc_session::parse::ParseSess,
     krate: &mut rustc_ast::Crate,

@@ -155,6 +155,13 @@ pub struct Sites {
     /// is registering variables to it (via [`Sites::extract`]) and reinserted via
     /// [`Sites::stash`] once that shim finishes.
     locs: std::collections::BTreeMap<String, Site>,
+    // FIXME: This is not thread-safe. Change the way that sites are pulled out, 
+    // to make it impossible for a thread to extract a site, get preempted, and have another
+    // thread then continue to make a new duplicate of the site.
+    // this probably just involves holding the ATI_ANALYSIS lock for the entire time that a site
+    // update is happening, and also probably just pulling out a &mut to the Site. This system
+    // currently exists because of the way I was doing Site manamgent prior the variable liveness 
+    // consideration, and it no longer has to be done like that.
 }
 impl Sites {
     /// Creates an empty `Sites` collection.
