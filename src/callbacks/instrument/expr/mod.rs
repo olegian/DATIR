@@ -161,35 +161,7 @@ pub fn transform_expr<'session>(
         }
 
         // No special transformation on the rest of these exprs
-        rustc_ast::ExprKind::ConstBlock(..)
-        | rustc_ast::ExprKind::Tup(..)
-        | rustc_ast::ExprKind::Cast(..)
-        | rustc_ast::ExprKind::Type(..)
-        | rustc_ast::ExprKind::Block(..)
-        | rustc_ast::ExprKind::Gen(..)
-        | rustc_ast::ExprKind::Await(..)
-        | rustc_ast::ExprKind::Use(..)
-        | rustc_ast::ExprKind::TryBlock(..)
-        | rustc_ast::ExprKind::Field(..)
-        | rustc_ast::ExprKind::Underscore
-        | rustc_ast::ExprKind::Path(..)
-        | rustc_ast::ExprKind::Break(..)
-        | rustc_ast::ExprKind::Continue(..)
-        | rustc_ast::ExprKind::Ret(..)
-        | rustc_ast::ExprKind::InlineAsm(..)
-        | rustc_ast::ExprKind::OffsetOf(..)
-        | rustc_ast::ExprKind::MacCall(..)
-        | rustc_ast::ExprKind::Struct(..)
-        | rustc_ast::ExprKind::Paren(..)
-        | rustc_ast::ExprKind::Try(..)
-        | rustc_ast::ExprKind::Yield(..)
-        | rustc_ast::ExprKind::Yeet(..)
-        | rustc_ast::ExprKind::Become(..)
-        | rustc_ast::ExprKind::IncludedBytes(..)
-        | rustc_ast::ExprKind::FormatArgs(..)
-        | rustc_ast::ExprKind::UnsafeBinderCast(..)
-        | rustc_ast::ExprKind::Err(..)
-        | rustc_ast::ExprKind::Dummy => {}
+        _ => {}
     }
 }
 
