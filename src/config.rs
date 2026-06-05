@@ -16,8 +16,6 @@
 use std::io::Write;
 use std::path::Path;
 
-/// DATIR configuration, to provide easy access to some helpful debugging information.
-#[derive(Debug)]
 pub struct DatirConfig {
     /// Directory where all log files are written. If None, all debug output is writen to stdout.
     pub log_dir: Option<Box<Path>>,
@@ -32,12 +30,15 @@ pub struct DatirConfig {
     pub print_function_signatures: bool,
     /// Whether or not to log the config after it is constructed.
     pub print_config: bool,
+    /// Whether or not to log the exact command that was forwarded to rustc by DATIR.
+    pub print_rustc_invocation: bool,
     /// Directory to which to output .ati files. If None, instrumented binary will
     /// print ATI related output to stdout.
     pub ati_output_dir: Option<std::path::PathBuf>,
     /// DeclsFile associated with crate being instrumented.
     pub decls_file: decls_gen::DeclsFile,
 }
+
 
 impl DatirConfig {
     /// Configuration intended to be used for development.

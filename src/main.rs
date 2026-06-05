@@ -88,6 +88,7 @@ pub fn run(
     config: DatirConfig,
     target: &std::path::Path,
     output: Option<&std::path::Path>,
+    extra_rustc_args: &[String],
 ) -> Result<(), DatirError> {
     let mut rustc_args = vec![
         "datir".to_string(),
@@ -106,8 +107,14 @@ pub fn run(
         rustc_args.push(format!("-o{output}"));
     }
 
+    rustc_args.extend(extra_rustc_args.iter().cloned());
+
     if config.print_config {
         config.log("Config", format!("{:#?}", config));
+    }
+
+    if config.print_rustc_invocation {
+        config.log("InvocationCommand", format!("{:#?}", rustc_args));
     }
 
     // The gather compilation
