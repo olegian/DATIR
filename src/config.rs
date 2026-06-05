@@ -16,6 +16,7 @@
 use std::io::Write;
 use std::path::Path;
 
+#[derive(Debug)]
 pub struct DatirConfig {
     /// Directory where all log files are written. If None, all debug output is writen to stdout.
     pub log_dir: Option<Box<Path>>,

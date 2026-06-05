@@ -18,8 +18,6 @@ use std::fmt;
 /// Specifies the possible command line arguments into DATIR,
 /// alonside any required arguments, short names, help messages, etc.
 pub fn datir_arg_init(program_name: &str) -> ArgParser {
-    
-
     ArgParser::new(
         program_name,
         "DATIR: dynamic abstract type inference for Rust",
@@ -187,7 +185,6 @@ impl ArgSpec {
 #[derive(Debug)]
 pub enum ArgError {
     MissingRequired(&'static str),
-    UnknownFlag(String),
     MissingValue(String),
     UnexpectedPositional(String),
     DuplicatePositional { first: String, second: String },
@@ -198,7 +195,6 @@ impl fmt::Display for ArgError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ArgError::MissingRequired(n) => write!(f, "missing required argument `{n}`"),
-            ArgError::UnknownFlag(s) => write!(f, "unknown flag `{s}`"),
             ArgError::MissingValue(s) => write!(f, "flag `{s}` requires a value"),
             ArgError::UnexpectedPositional(s) => {
                 write!(f, "unexpected positional argument `{s}`")
@@ -219,6 +215,7 @@ impl fmt::Display for ArgError {
 pub struct ParsedArgs {
     values: HashMap<&'static str, String>,
     flags: HashSet<&'static str>,
+    passthrough: Vec<String>,
 }
 
 impl ParsedArgs {
@@ -230,6 +227,13 @@ impl ParsedArgs {
     /// Returns the value associated with an option/positional argument.
     pub fn get_value(&self, name: &str) -> Option<&str> {
         self.values.get(name).map(String::as_str)
+    }
+
+    /// Returns any args the parser did not recognize (unknown -flags and their values,
+    /// plus anything after a literal `--` separator).
+    /// These are intended to be forwarded verbatim to rustc rather than consumed by DATIR
+    pub fn passthrough(&self) -> &[String] {
+        &self.passthrough
     }
 }
 
@@ -294,15 +298,37 @@ impl ArgParser {
         I: IntoIterator<Item = String>,
     {
         let mut parsed = ParsedArgs::default();
-        let mut iter = raw.into_iter();
-
+        let mut iter = raw.into_iter().peekable();
         while let Some(arg) = iter.next() {
+            // Literal `--` separator: forward everything after it verbatim to rustc.
+            if arg == "--" {
+                parsed.passthrough.extend(iter.by_ref());
+                break;
+            }
+
             if arg.starts_with('-') {
                 let spec = self
                     .specs
                     .iter()
-                    .find(|s| s.short == Some(arg.as_str()) || s.long == Some(arg.as_str()))
-                    .ok_or_else(|| ArgError::UnknownFlag(arg.clone()))?;
+                    .find(|s| s.short == Some(arg.as_str()) || s.long == Some(arg.as_str()));
+
+                let Some(spec) = spec else {
+                    // avoid stealing the positional file arg, only do passthrough stuff once that
+                    // positional has been bound.
+                    parsed.passthrough.push(arg);
+                    let positional_bound = self
+                        .specs
+                        .iter()
+                        .filter(|s| s.kind == ArgKind::Positional)
+                        .all(|s| parsed.values.contains_key(s.name));
+                    if positional_bound
+                        && let Some(next) = iter.peek()
+                        && !next.starts_with('-')
+                    {
+                        parsed.passthrough.push(iter.next().unwrap());
+                    }
+                    continue;
+                };
 
                 match spec.kind {
                     ArgKind::Flag => {
