@@ -169,12 +169,16 @@ pub fn main() {
                 .expect("Unable to interpret rec-depth as an integer.")
         });
 
-        let decls_file = DeclsFile::from_source_file(&target_path, depth);
+        let decls_file = DeclsFile::from_source_file(&target_path, args.passthrough(), depth);
         decls_file
             .write_to_file(&target_path.with_extension("decls"))
             .expect("unable to write decls file to disk");
         decls_file
     };
+
+    // useful for debugging sometimes...
+    // let decls_path = std::path::PathBuf::from("./tests/simple/main.decls");
+    // let decls_file = DeclsFile::from_decls_file(&decls_path).unwrap();
 
     // Construct config based on mode.
     let config = if let Some(dir_path) = args.get_value("release") {
@@ -192,7 +196,7 @@ pub fn main() {
 
     let output_path = args.get_value("output").map(std::path::PathBuf::from);
 
-    if let Err(e) = run(config, &target_path, output_path.as_deref()) {
+    if let Err(e) = run(config, &target_path, output_path.as_deref(), args.passthrough()) {
         eprintln!("datir: {e}");
         std::process::exit(1);
     }

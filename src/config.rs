@@ -42,7 +42,7 @@ pub struct DatirConfig {
 
 
 impl DatirConfig {
-    /// Configuration intended to be used for development.
+        /// Configuration intended to be used for development.
     pub fn debug(decls_file: decls_gen::DeclsFile) -> Self {
         // make sure log directory exists and is empty
         // FIXME: have the final executable also be created in this directory when using debug?
@@ -57,6 +57,7 @@ impl DatirConfig {
             print_original_ast: true,
             print_first_pass_info: true,
             print_function_signatures: true,
+            print_rustc_invocation: true,
             print_config: true,
             ati_output_dir: None,
             decls_file,
@@ -71,6 +72,7 @@ impl DatirConfig {
             print_original_ast: false,
             print_first_pass_info: false,
             print_function_signatures: false,
+            print_rustc_invocation: false,
             print_config: false,
             ati_output_dir: None,
             decls_file,
@@ -85,6 +87,7 @@ impl DatirConfig {
             print_original_ast: false,
             print_first_pass_info: false,
             print_function_signatures: false,
+            print_rustc_invocation: false,
             print_config: false,
             ati_output_dir: Some(ati_output_dir),
             decls_file,
