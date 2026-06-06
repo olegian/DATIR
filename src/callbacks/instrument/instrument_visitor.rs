@@ -188,10 +188,19 @@ impl<'a> rustc_ast::mut_visit::MutVisitor for InstrumentingVisitor<'a> {
     fn visit_pat(&mut self, _node: &mut rustc_ast::Pat) { }
 
     /// Transform `let x: ty` statements, into `let x: Tag(ty)`.
+    ///
+    /// Every binding is forced to `mut`. A binding whose initializer was a `&mut`
+    /// to a tupleable place (e.g. `let b = &mut a[1..]`) holds an owned, move-only
+    /// `TaggedRefMut<T>` post-instrumentation rather than a `&mut T`, so mutation
+    /// that used to flow through the reference now needs the binding itself to be
+    /// mutable (`.reborrow()` / `IndexMut` take `&mut self`). Marking everything
+    /// `mut` is harmless for the other bindings (at worst an `unused_mut` warning).
     fn visit_local(&mut self, local: &mut rustc_ast::Local) {
         if let Some(ty) = &mut local.ty {
             types::recursively_transform_ast_type(ty);
         }
+
+        expr::pat_force_mut_bindings(&mut local.pat);
 
         rustc_ast::mut_visit::walk_local(self, local);
     }

@@ -10,11 +10,16 @@ use crate::{callbacks::instrument::instrument_visitor::InstrumentingVisitor, cal
 
 /// Invoked whenever the visitor runs into a ExprKind::Assign.
 ///
-/// Assigning through a TaggedRefMut requires rewriting `*lhs = rhs` to
-/// `lhs.assign(rhs)` so that both the id and the value are written.
-/// Both `lhs` and `rhs` have already been instrumented by the caller
-/// (the LHS via place-walk, which dispatches `transform_expr` on the
-/// inner of any `Deref` it finds; the RHS via the normal value walk).
+/// Assigning through a tracked mutable reference requires rewriting
+/// `*lhs = rhs` to `lhs.reborrow().assign(rhs)` so that both the id and
+/// the value are written. The `inner` of the `*lhs` is a *place* and so
+/// was never value-normalized (the place-walk recurses with
+/// `transform_lhs_place_expr`, not `transform_expr`), leaving it typed
+/// `&mut Tagged<T>` — including the `ref mut` pattern-binding case. The
+/// `.reborrow()` normalizes that to a `TaggedRefMut<T>`, the type that
+/// actually carries `assign`; it is idempotent if `inner` is already a
+/// `TaggedRefMut<T>`. The RHS was instrumented by the caller via the
+/// normal value walk.
 pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut rustc_ast::Expr) {
     let rustc_ast::ExprKind::Assign(lhs, rhs, _) = &mut assign_expr.kind else {
         panic!(
@@ -36,7 +41,7 @@ pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut ru
     };
 
     let code = format!(
-        "{}.assign({})",
+        "({}).reborrow().assign({})",
         pprust::expr_to_string(inner),
         pprust::expr_to_string(rhs),
     );
@@ -45,11 +50,18 @@ pub fn transform_assign(visitor: &mut InstrumentingVisitor, assign_expr: &mut ru
 
 /// Invoked whenever the visitor runs into ExprKind::AssignOp.
 ///
-/// Compound assignment through a TaggedRefMut (`*lhs OP= rhs`).
+/// Compound assignment through a tracked mutable reference (`*lhs OP= rhs`).
 /// Plain DerefMut would only update the value field and leave the
 /// id stale, so rewrite to read the current Tagged via field
 /// projection, apply the binary form of the op, then write both
 /// id and value back through `.assign()`.
+///
+/// As in [`transform_assign`], `inner` is an un-normalized place typed
+/// `&mut Tagged<T>`, so it is `.reborrow()`d into a `TaggedRefMut<T>`
+/// before binding to `__ati_lhs`. That makes `.assign` resolve and makes
+/// the `*__ati_lhs.0` / `*__ati_lhs.1` field derefs valid (those fields
+/// are `&mut Id` / `&mut T` on a `TaggedRefMut`, not the plain values a
+/// raw `&mut Tagged<T>` would expose).
 pub fn transform_assign_op(
     visitor: &mut InstrumentingVisitor,
     assign_op_expr: &mut rustc_ast::Expr,
@@ -75,7 +87,7 @@ pub fn transform_assign_op(
 
     let bin_op: rustc_ast::BinOpKind = op.node.into();
     let code = format!(
-        "{{ let mut __ati_lhs = {}; __ati_lhs.assign(Tagged(*__ati_lhs.0, *__ati_lhs.1) {} {}); }}",
+        "{{ let mut __ati_lhs = ({}).reborrow(); __ati_lhs.assign(Tagged(*__ati_lhs.0, *__ati_lhs.1) {} {}); }}",
         pprust::expr_to_string(inner),
         bin_op.as_str(),
         pprust::expr_to_string(rhs),

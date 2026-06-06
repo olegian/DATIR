@@ -43,6 +43,7 @@ mod array;
 mod assign;
 mod call;
 mod common;
+pub(crate) use common::pat_force_mut_bindings;
 mod control_flow;
 mod index;
 mod literal;
