@@ -45,6 +45,21 @@ impl<'a, T> TaggedRefMut<'a, [T]> {
         Tagged(*self.0, self.1.len())
     }
 }
+impl<'a, T, const N: usize> TaggedRef<'a, [T; N]> {
+    /// Length of the borrowed array as a tagged `usize`, carrying the array's id. Defined for
+    /// the sized `[T; N]` shape (a `&[T; N]` parameter) because method resolution does not
+    /// unsize the receiver to reach the `[T]` slice impl.
+    pub fn len(&self) -> Tagged<usize> {
+        Tagged(*self.0, N)
+    }
+}
+impl<'a, T, const N: usize> TaggedRefMut<'a, [T; N]> {
+    /// Length of the borrowed mutable array as a tagged `usize`, carrying the array's id.
+    /// Defined for the sized `[T; N]` shape, mirroring [TaggedRef::len].
+    pub fn len(&self) -> Tagged<usize> {
+        Tagged(*self.0, N)
+    }
+}
 
 // =================== SITE BIND ===================
 
@@ -158,6 +173,50 @@ where
 impl<'slice, Idx, T> std::ops::IndexMut<Tagged<Idx>> for TaggedRefMut<'slice, [T]>
 where
     [T]: std::ops::IndexMut<Idx, Output = T>,
+{
+    fn index_mut(&mut self, index: Tagged<Idx>) -> &mut Self::Output {
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &index.0);
+        &mut self.1[index.1]
+    }
+}
+
+// TaggedRef<[T; N]> / TaggedRefMut<[T; N]>
+// Defined for the sized `[T; N]` shape (a `&[T; N]` parameter) because method resolution does
+// not unsize the receiver to reach the `[T]` slice impls above.
+impl<'slice, Idx, T, const N: usize> std::ops::Index<Tagged<Idx>> for TaggedRef<'slice, [T; N]>
+where
+    [T; N]: std::ops::Index<Idx, Output = T>,
+{
+    type Output = T;
+
+    fn index(&self, index: Tagged<Idx>) -> &Self::Output {
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &index.0);
+        &self.1[index.1]
+    }
+}
+impl<'slice, Idx, T, const N: usize> std::ops::Index<Tagged<Idx>> for TaggedRefMut<'slice, [T; N]>
+where
+    [T; N]: std::ops::Index<Idx, Output = T>,
+{
+    type Output = T;
+
+    fn index(&self, index: Tagged<Idx>) -> &Self::Output {
+        ATI_ANALYSIS
+            .lock()
+            .unwrap()
+            .union_and_get_id(self.0, &index.0);
+        &self.1[index.1]
+    }
+}
+impl<'slice, Idx, T, const N: usize> std::ops::IndexMut<Tagged<Idx>> for TaggedRefMut<'slice, [T; N]>
+where
+    [T; N]: std::ops::IndexMut<Idx, Output = T>,
 {
     fn index_mut(&mut self, index: Tagged<Idx>) -> &mut Self::Output {
         ATI_ANALYSIS
